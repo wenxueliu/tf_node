@@ -11,6 +11,10 @@ Proxy : OpDefBuilderWrapper, RenameDevice
 
 队列 : Rendezvous 是非常巧妙的无阻塞队列设计
 
+registration/factory-based 机制的类包括
+1. ServerInterface, ServerFactory
+2. Device         , DeviceFactory
+
 ## 类的设计原则
 
 所有的类遵循
@@ -168,6 +172,30 @@ OpenCL 进行显卡编程
 
 
 ## CPP 语法
+
+在给容器添加元素时，如果能知道需要添加的数量，提前 reserve 预留空间，避免动态扩容。
+
+手动调用析构函数
+
+``` cpp
+typedef ::grpc::tensorflow_helper::GrpcBufferReader Reader;
+grpc_byte_buffer* buffer_;  // Not owned
+Reader* stream_ = nullptr;  // Points into space_ if non-nullptr
+char space_[sizeof(Reader)];
+stream_ = new (&space_) Reader(buffer_); //这是什么鬼?
+if (stream_) {
+  stream_->~Reader(); //手动调用析构函数
+}
+```
+
+万能构造函数
+``` cpp
+template <typename T, typename... Args>
+std::unique_ptr<T> MakeUnique(Args&&... args) {
+  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+```
+
 
 ```
   char *ptr
