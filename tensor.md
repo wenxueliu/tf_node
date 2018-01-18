@@ -1,11 +1,17 @@
 
 ## Tensor
 
-A Tensor is a symbolic handle to one of the outputs of an Operation. It does not hold the values of that operation's output, but instead provides a means of computing those values in a TensorFlow tf.Session.
+A Tensor is a symbolic handle to one of the outputs of an Operation. It does not hold
+the values of that operation's output, but instead provides a means of computing those
+values in a TensorFlow tf.Session.
 
-1. A Tensor can be passed as an input to another Operation. This builds a dataflow connection between operations, which enables TensorFlow to execute an entire Graph that represents a large, multi-step computation.
+1. A Tensor can be passed as an input to another Operation. This builds a dataflow
+connection between operations, which enables TensorFlow to execute an entire Graph
+that represents a large, multi-step computation.
 
-2. After the graph has been launched in a session, the value of the Tensor can be computed by passing it to tf.Session.run. t.eval() is a shortcut for calling tf.get_default_session().run(t).
+2. After the graph has been launched in a session, the value of the Tensor can be
+computed by passing it to tf.Session.run. t.eval() is a shortcut for calling 
+tf.get_default_session().run(t).
 
 参数是 Operation, Operation endpoint 的 value_index, 类型三要素
 
@@ -78,15 +84,15 @@ class BufferBase : public TensorBuffer
   Allocator* const alloc_;
 
 class Buffer : public BufferBase
-  T* data_;
-  int64 elem_;
+  T* data_;     //保存数据的首指针
+  int64 elem_;  //元素个数
 
 class SubBuffer : public TensorBuffer  //与 root Buffer 共享 buf
   TensorBuffer* root_; //
   T* data_;     //保存数据的首指针
   int64 elem_;  //元素个数
 
-class TensorReference //构造和移动都非常  cheap
+class TensorReference //构造和移动都非常 cheap,  直接指向 TensorBuffer 或者指向 Tensor 的 buf.roor_buffer()(类型仍然为 TensorBuffer)
   TensorBuffer* buf_;
 
 message TensorSliceProto
@@ -103,9 +109,9 @@ class TensorSlice //表达 Tensor 在某一个维度的范围
 
 message TensorShapeProto
   message Dim
-    int64 size = 1; //该维的元素个数， -1 表示  unknow, 在反序列化的时候会失败
+    int64 size = 1;      // 该维的元素个数， -1 表示  unknow, 在反序列化的时候会失败
     string name = 2;
-  repeated Dim dim = 2; //第一个是  outermost dim, 最后一个是  inner dim
+  repeated Dim dim = 2;  // 第一个是  outermost dim, 最后一个是  inner dim
   bool unknown_rank = 3; // 如果为 ture, dim.size 必须为 0
 
 class TensorShapeRep
@@ -114,7 +120,7 @@ class TensorShapeRep
     // Force data to be aligned enough for a pointer.
     Rep64* unused_aligner;
   } u_;
-  int64 num_elements_; //默认 -1
+  int64 num_elements_;   // 默认 -1
 
 tag 默认 REP16, data_type 默认 DT_INVALID, ndims_byte 默认 kUnknownRank
 
@@ -122,7 +128,7 @@ class TensorShapeBase : public TensorShapeRep
 class TensorShape : public TensorShapeBase<TensorShape>
 class PartialTensorShape : public TensorShapeBase<PartialTensorShape>
 
-PartialTensorShape 与  TensorShape 的区别在于 PartialTensorShape 的某一个维度的 size 允许为 0
+PartialTensorShape 与 TensorShape 的区别在于 PartialTensorShape 的某一个维度的 size 允许为 0
 
 struct TensorShapeDim
   int64 size;
@@ -162,9 +168,18 @@ class Tensor
   TensorShape shape_;
   TensorBuffer* buf_; //shape_.data_type() 类型的 Buffer
 
+class TensorResponse
+  bool on_host_ = false; //CPU
+  DeviceBase* device_ = nullptr;
+  AllocatorAttributes alloc_attrs_;
+  Allocator* allocator_ = nullptr; //device_->GetAllocator(alloc_attrs_);
+  bool already_used_ = false;
+  Tensor tensor_;
+  RecvTensorResponse meta_;
 
+class Source
 
-
+TensorSlice
 
 
 ## 实例
@@ -665,11 +680,14 @@ int64 TensorShapeBase<Shape>::dim_size(int d) //根据 tag 返回对应的第 d 
 void TensorShapeBase<Shape>::RecomputeNumElements() //重新计算 num_elements 大小
 void TensorShapeBase<Shape>::AddDim(int64 size) //增加一维，该维的元素个数为 size
 void TensorShapeBase<Shape>::AppendShape(const TensorShapeBase& shape) //依次遍历  shape 的每一维增加到 this 后面
+int MaxDimensions() // return 254;
 void TensorShapeBase<Shape>::InsertDim(int d, int64 size) //将 size 插入第 d 维之前
 gtl::InlinedVector<int64, 4> TensorShapeBase<Shape>::dim_sizes() //返回每一维的大小的数组
 void TensorShapeBase<Shape>::set_dim(int d, int64 size) //设置第 d 维的元素为 size
 void TensorShapeBase<Shape>::RemoveDim(int d)  //删除第 d 维
 bool TensorShape::IsSameSize(const TensorShape& b) //只有维度相同，每个维度的元素个数相同才是返回 true
+bool unknown_rank()  //return kIsPartial && ndims_byte() == kUnknownRank;
+int dims() // 范围维度大小
 void TensorShapeBase<Shape>::AsProto(TensorShapeProto* proto) //转换为 TensorShapeProto
 TensorShapeIter<Shape> TensorShapeBase<Shape>::begin() // return TensorShapeIter<Shape>(static_cast<const Shape*>(this), 0);
 TensorShapeIter<Shape> TensorShapeBase<Shape>::end() // return TensorShapeIter<Shape>(static_cast<const Shape*>(this), dims());
@@ -689,9 +707,6 @@ string PartialTensorShapeUtils::PartialShapeListString(const gtl::ArraySlice<Par
 bool PartialTensorShapeUtils::AreCompatible(gtl::ArraySlice<PartialTensorShape>& shapes0, gtl::ArraySlice<PartialTensorShape>& shapes1) //元素个数相同，且每个元素相互兼容
 bool PartialTensorShapeUtils::AreIdentical(gtl::ArraySlice<PartialTensorShape>& shapes0, gtl::ArraySlice<PartialTensorShape>& shapes1) // 维度和每个维度的元素都相同
 Status TensorShapeUtils::NumElements(gtl::ArraySlice<int64> shape, int64* num_elements) //shape 的元素个数保存在  num_elements
-
-
-
 
 void Extend(int dim);
 void AsProto(TensorSliceProto* proto) const;
@@ -729,3 +744,21 @@ Status Split(const Tensor& tensor, const gtl::ArraySlice<int64>& sizes, std::vec
 
 将  tensor 分成 n 个  Tensor, 每个 Tensor 的维度保存在 sizes 中，分割后的
 Tensor 保存在 result
+
+
+### TensorResponse
+
+void TensorResponse::Clear() //重置 TensorResponse
+void TensorResponse::ClearTensor() //重置 tensor_，meta_
+Status TensorResponse::InitFrom(RecvTensorResponse* response) // response 初始化  meta_，meta_.tensor() 初始化  tensor_，重置 meta_
+void TensorResponse::InitPartial(const RecvTensorResponse& response) // response 初始化 tensor_
+bool TensorResponse::ParseTensorSubmessage(protobuf::io::CodedInputStream* input, TensorProto* tensor_meta) //从  input 读数据初始化 tensor_meta
+
+Status TensorResponse::ParseFrom(Source* source)
+
+如果 on_host_，从 source 读数据到 meta_, 调用 device_->MakeTensorFromProto 初始化 tensor_ ，清空  meta_，返回，否则继续
+从 Source 中读数据，并初始化 meta_  成功，返回，如果失败，继续
+从 Source 中读数据，并初始化 tensor_
+
+bool TensorResponse::ParseFast(Source* source) //从 Source 中读数据，并初始化 meta_
+bool TensorResponse::ParseSlow(Source* source) //从 Source 中零拷贝的方式读数据，并初始化 tensor_

@@ -12,28 +12,6 @@ Rendezvous
 ExecutionUnit
 
 
-struct WorkerEnv //对 Env, DeviceMgr, RendezvousMgrInterface, ThreadPool 的简单封装
-  Env* env = nullptr;
-  SessionMgr* session_mgr = nullptr;
-  std::vector<Device*> local_devices;
-  DeviceMgr* device_mgr = nullptr;
-  RendezvousMgrInterface* rendezvous_mgr = nullptr;
-  thread::ThreadPool* compute_pool = nullptr;
-
-SessionMgr //管理 WorkerSession 的增删查
-  const WorkerEnv* const worker_env_;
-  WorkerSession legacy_session_;
-  std::map<string, std::unique_ptr<WorkerSession>> sessions_; //session: new WorkerSession
-
-struct WorkerSession // 对与 session 相关的 GraphMgr, DeviceMgr, WorkerEnv 的封装
-  const string worker_name;
-  const std::unique_ptr<WorkerCacheInterface> worker_cache;
-  const std::unique_ptr<DeviceMgr> device_mgr; //new DeviceMgr(RenamedDevice::NewRenamedDevice(worker_env_.local_devices))
-  const std::unique_ptr<GraphMgr> graph_mgr; //new GraphMgr(worker_env_, device_mgr);
-
-WorkerCacheInterface //对  WorkerInterface 的增删查
-WorkerInterface //对  Worker 的抽象，对 Graph 的注册，注销，查看
-
 class GraphMgr //对 Graph 和 Executor, Rendezvous 关联起来
   const WorkerEnv* worker_env_;             // Not owned.
   DeviceMgr* device_mgr_;
@@ -51,7 +29,6 @@ struct ExecutionUnit //对应到  Graph 进行  Partition 之后的一个 Partit
     Executor* root = nullptr; //ExecutorImpl
     FunctionLibraryRuntime* lib = nullptr;
 
-
 GraphMgr
 
 1. 管理注册到一个 TensorFlow worker 的所有 graph， 每个 Item 与一个 string 关联保存在 GraphMgr 的 table_ 中。
@@ -64,26 +41,6 @@ GraphMgr
 
 
 ```
-               WorkerEnv
-GrpcServer     MasterEnv
-
-
-GrpcMasterService -> Master master_impl_
-                     grpc::MasterService::AsyncService master_service_
-
-               Env* env
-MasterEnv  ->  WorkerCacheInterface interface
-               OpRegistryInterface* ops
-
-Master   ->    MasterSession
-
-MasterSession  ->  WorkerSession
-
-                    DeviceMgr
-WorkerInterface ->  GraphMgr
-                    WorkerCacheInterface
-
-
                 handler:Item
 GraphMgr  ->    DeviceMgr device_mgr_
                 WorkerEnv worker_env_
@@ -97,12 +54,6 @@ Item -> session                         Graph graph
 
                 LocalExecutorParams params;
 ExecutorImpl    Graph* graph_;
-
-                Env
-                RendezvousMgrInterface   -> step_id:Rendezvous
-WorkerEnv  ->   SessionMgr
-                DeviceMgr
-                ThreadPool
 
                Send|Recv -> Tensor
 Rendezvous ->  WorkerSession
@@ -126,12 +77,3 @@ WorkerSession 包含  DeviceMgr, GraphMgr, WorkerCacheInterface
 MemoryType
 
 确保 g 中每个 Edge 的 MemoryType 是一样的， 对于不能兼容的 Edge，将 Edge 修改为 "e->src+e->src_ouput -> `_Send` -> `_Recv` -> e->dst+e->dst_input"
-
-## 调用过程
-
-1. 创建 Graph graph
-2. 设置 SessionOptions options
-3. 创建 Session session(通过 NewSession)
-4. session->Create(graph)
-5. session->Run()
-6. session->Close()

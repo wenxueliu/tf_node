@@ -61,111 +61,114 @@ core/common_runtime/threadpool_device_factory.cc
 
 ## 数据结构
 
-DeviceAttributes -> Device
+1. 注册
 
-DeviceBase -> Device
+REGISTER_LOCAL_DEVICE_FACTORY("CPU", ThreadPoolDeviceFactory, 60);
+REGISTER_LOCAL_DEVICE_FACTORY("GPU", GPUDeviceFactory, 210)
+
+2. 创建
+
+DeviceFactory::AddDevices(options, name_prefix, devices)
+    cpu_factory = GetFactory("CPU")
+    cpu_factory->CreateDevices(options, name_prefix, devices) //首先创建 CPU 类型的设备
+        ThreadPoolDeviceFactory->CreateDevices(options, name_prefix, devices)
+            for (i: options.config.device_count().find("CPU").second)
+                device = new ThreadPoolDevice(options, name_prefix/cpu:${i}, Bytes(256 `<<` 20), DeviceLocality(), cpu_allocator()) //这里 i 可能是多个
+                    attributes = Device::BuildDeviceAttributes(name_prefix/cpu:${i}, Bytes(256 `<<` 20), DEVICE_CPU, Bytes(256 `<<` 20), DeviceLocality())
+                    LocalDevice(options, attributes)
+                        Device(options.env, attributes), owned_tp_info_(nullptr)
+                            DeviceBase(env), device_attributes_(device_attributes)
+                            DeviceNameUtils::ParseFullName(attributes.name(), &parsed_name_)
+                            rmgr_ = new ResourceMgr(parsed_name_.job)
+                    allocator_(allocator)
+                devices.push_back(device)
+    for (auto& p : device_factories())//创建已经注册的非 CPU 类型的 Device
+        if (factory != cpu_factory)
+            factory->CreateDevices(options, name_prefix, devices)
+                //如果是 GPU
+                GPUDeviceFactory->CreateDevices(options, name_prefix, devices)
+                    GetValidDeviceIds(options.config.gpu_options().visible_device_list(), &valid_gpu_ids)
+                    for (i: min(valid_gpu_ids.size(), options.config.device_count().find("GPU").second))
+                        BaseGPUDeviceFactory::CreateDevices(options, name_prefix, devices)
+                            GPUDeviceFactory::CreateGPUDevice(options, name_prefix"/gpu:"${i}, valid_gpu_ids[i], &gpu_device));
+                                new GPUDevice()
+                                    new BaseGPUDevice()
+                                        new LocalDevice()
+                            gpu_device->Init(options)
+                            devices.push_back(gpu_device)
+
+
+           -> DeviceSimple
+DeviceBase -> Device        -> LocalDevice  -> BaseGPUDevice -> GPUDevice
+                                            -> ThreadPoolDevice
+                                            -> SYCLDevice
+                                            -> XlaDevice
+                            -> RenamedDevice
+                            -> RemoteDevice
+
 
 struct FactoryItem
   std::unique_ptr<DeviceFactory> factory;
   int priority;
 
-static std::unordered_map<string, FactoryItem>* factories = new std::unordered_map<string, FactoryItem>; //key 为  devict_type
+static std::unordered_map<string, FactoryItem>* factories//key 为  devict_type
 
 message DeviceLocality
   // Optional bus locality of device.  Default value of 0 means
   // no specific locality.  Specific localities are indexed from 1.
   int32 bus_id = 1;
 
+//与 desc = GPUMachineManager()->ExecutorForDevice(gpu_id).ValueOrDie()->GetDeviceDescription() 关系密切
 message DeviceAttributes
   string name = 1;  //`job:<name>/replica:<id>/task:<id>/device:CPU:<id>`
   string device_type = 2; //cpu, gpu
-  int64 memory_limit = 4;
-  DeviceLocality locality = 5; //为了加速访问平台具体的属性
-  fixed64 incarnation = 6; // 全局唯一的数字, 不能为 0
-  string physical_device_desc = 7; //
+  int64 memory_limit = 4; //专题详述
+  DeviceLocality locality = 5; //为了加速访问平台具体的属性, desc.numa_node ()+ 1
+  fixed64 incarnation = 6; // 全局唯一的数字, 不能为 0,  由 random::New64() 设置
+  string physical_device_desc = 7; // 对于 GPU 设备而言，为字符串 "device: ${gpu_id}, name: ${desc.name}, pci bus id: ${desc.pci_bus_id()}" 
+
+### Device
 
 class DeviceBase
-  Env* const env_;
-  CpuWorkerThreads* cpu_worker_threads_ = nullptr; //线程
+  Env* const env_; SessionOptions.Env
+  CpuWorkerThreads* cpu_worker_threads_ = nullptr; //new LocalDevice::EigenThreadPoolInfo(options)->eigen_worker_threads_
   GpuDeviceInfo* gpu_device_info_ ; //GPU
-  Eigen::ThreadPoolDevice* eigen_cpu_device_ ; //CPU
+  Eigen::ThreadPoolDevice* eigen_cpu_device_ ; //new LocalDevice::EigenThreadPoolInfo(options)->eigen_device_
   Eigen::SyclDevice* eigen_sycl_device_ ; //OpenCL
 
   struct GpuDeviceInfo
-    // Make sure all the defaults are NULL, so we can spot missing assignments.
-    perftools::gputools::Stream* stream = nullptr;
-    DeviceContext* default_context = nullptr;
-    EventMgr* event_mgr = nullptr;
+    perftools::gputools::Stream* stream
+    DeviceContext* default_context;
+    EventMgr* event_mgr ;
     int gpu_id = -1;
 
   struct CpuWorkerThreads
     int num_threads = 0; //线程数
     thread::ThreadPool* workers = nullptr; //线程池
 
+class DeviceSimple : public DeviceBase
 
 class Device : public DeviceBase //描述一个设备, 抽象类
-  const DeviceAttributes device_attributes_;
+  const DeviceAttributes device_attributes_; //参考 DeviceAttributes 的说明
   DeviceNameUtils::ParsedName parsed_name_;
   OpSegment op_seg_;
   ResourceMgr* rmgr_ = nullptr; //new ResourceMgr(parsed_name_.job);
 
 class LocalDevice : public Device
   static bool use_global_threadpool_; //默认 true
-  struct EigenThreadPoolInfo;
-      DeviceBase::CpuWorkerThreads eigen_worker_threads_; //options.config.intra_op_parallelism_threads() or 系统 cpu 核心数
-      std::unique_ptr<Eigen::ThreadPoolInterface> eigen_threadpool_wrapper_; //new EigenThreadPoolWrapper(eigen_worker_threads_.workers)
-      std::unique_ptr<Eigen::ThreadPoolDevice> eigen_device_;//new Eigen::ThreadPoolDevice(eigen_threadpool_wrapper_.get(), eigen_worker_threads_.num_threads)
+  DeviceBase::CpuWorkerThreads eigen_worker_threads_; //options.config.intra_op_parallelism_threads() or 系统 cpu 核心数
+  std::unique_ptr<Eigen::ThreadPoolInterface> eigen_threadpool_wrapper_; //new EigenThreadPoolWrapper(eigen_worker_threads_.workers)
+  std::unique_ptr<Eigen::ThreadPoolDevice> eigen_device_;//new Eigen::ThreadPoolDevice(eigen_threadpool_wrapper_.get(), eigen_worker_threads_.num_threads)
   std::unique_ptr<EigenThreadPoolInfo> owned_tp_info_; //new LocalDevice::EigenThreadPoolInfo(options)
 
-class XlaDevice : public LocalDevice
-  const int device_ordinal_;
-  // The name of the device that is used to compile Ops for this XlaDevice.
-  const DeviceType& jit_device_name_;
-  Allocator* xla_allocator_;
-  ::perftools::gputools::Platform* platform_;
+class DeviceSet //可以遍历所有的 Device，也可以 根据名字查找一个 Device
+  std::vector<Device*> devices_; //保存所有的设备
+  //full name : job:${job}/replica:${replica}/task:${task}/${device_type}:${id}
+  //legacy name: job:${job}/replica:${replica}/task:${task}/device:${device_type}:${id}
+  std::unordered_map<string, Device*> device_by_name_; // 这里的每个设备都有两个 key(full, legacy)
+  Device* client_device_ = nullptr; //
 
-class XlaCompilationDevice : public LocalDevice
-  std::unique_ptr<XlaCompilationAllocator> allocator_;
-
-
-class BaseGPUDevice : public LocalDevice
-  Allocator* gpu_allocator_;  // not owned
-  Allocator* cpu_allocator_;  // not owned
-  gpu::StreamExecutor* executor_;  // not owned
-  struct StreamGroup
-    gpu::Stream* compute = nullptr;
-    gpu::Stream* host_to_device = nullptr;
-    gpu::Stream* device_to_host = nullptr;
-    gpu::Stream* device_to_device = nullptr;
-  class StreamGroupFactory;
-  gtl::InlinedVector<StreamGroup*, 4> streams_;
-  gtl::InlinedVector<char*, 4> scratch_;
-  std::vector<GPUDeviceContext*> device_contexts_;
-  GpuDeviceInfo* gpu_device_info_ = nullptr;
-  mutex trace_mu_;
-  int gpu_id_ = -1;
-  const bool sync_every_op_ = false;
-  const int32 max_streams_;
-  std::unique_ptr<EventMgr> em_;
-
-class SYCLDevice : public LocalDevice
-  Allocator         cpu_allocator_;           // not owned
-  SYCLAllocator     sycl_allocator_;          // not owned
-  SYCLDeviceContext device_context_;
-
-class ThreadPoolDevice : public LocalDevic
-  Allocator* allocator_;  // Not owned
-
-class RenamedDevice : public Device //目的仅仅是改变名称
-  Device underlying_;
-  bool owns_underlying_;
-
-class RemoteDevice : public Device
-  const string local_dev_name_;
-
-class DeviceSimple : public DeviceBase
-
-class DeviceMgr
+class DeviceMgr //对一组设备的封装，方便查询
   typedef gtl::InlinedVector<Device*, 8> DeviceVec;
   DeviceVec devices_; //所有 Device
   std::unordered_map<StringPiece, Device*, StringPiece::Hasher> device_map_; // 每个 Device 保存该 Device 的三组映射关系(full name, local name, canonical name )
@@ -175,13 +178,6 @@ class DeviceMgr
   const char* data_;
   size_t size_;
 
-class DeviceSet //可以遍历所有的 Device，也可以 根据名字查找一个 Device
-  std::vector<Device*> devices_; //保存所有的设备
-  //full name : job:${job}/replica:${replica}/task:${task}/${device_type}:${id}
-  //legacy name: job:${job}/replica:${replica}/task:${task}/device:${device_type}:${id}
-  std::unordered_map<string, Device*> device_by_name_; // 这里的每个设备都有两个 key(full, legacy)
-  Device* client_device_ = nullptr; //
-
 class DeviceFactory //创建一个设备，同一类型的设备可能存在一个，新注册的设备如果要生效必须优先级比已经存在的高。
   static void Register(const string& device_type, DeviceFactory* factory, int priority);
   static DeviceFactory* GetFactory(const string& device_type);
@@ -190,14 +186,49 @@ class DeviceFactory //创建一个设备，同一类型的设备可能存在一�
   virtual Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices) = 0;
   static int32 DevicePriority(const string& device_type);
 
-class XlaCpuDeviceFactory : public DeviceFactory
-  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+注: 系统运行必须注册一个 CPU DeviceFactory
 
-class XlaGpuDeviceFactory : public DeviceFactory
-  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+```cpp
+#define REGISTER_LOCAL_DEVICE_FACTORY(device_type, device_factory, ...)
+  static ::tensorflow::dfactory::Registrar<device_factory> _____COUNTER__object_(device_type, ##__VA_ARGS__)
 
-class XlaExaDeviceFactory : public DeviceFactory
-  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+REGISTER_LOCAL_DEVICE_FACTORY("XLA_GPU", XlaGpuDeviceFactory);
+REGISTER_LOCAL_DEVICE_FACTORY("XLA_CPU", XlaCpuDeviceFactory);
+REGISTER_LOCAL_DEVICE_FACTORY("XLA_EXEC", XlaExaDeviceFactory, 40);
+REGISTER_LOCAL_DEVICE_FACTORY("GPU", GPUDeviceFactory, 210)  //GOOGLE_CUDA
+REGISTER_LOCAL_DEVICE_FACTORY("CPU", GPUCompatibleCPUDeviceFactory, 70) //GOOGLE_CUDA
+REGISTER_LOCAL_DEVICE_FACTORY("SYCL", SYCLDeviceFactory, 200); //TENSORFLOW_USE_SYCL
+REGISTER_LOCAL_DEVICE_FACTORY("CPU", ThreadPoolDeviceFactory, 60);
+```
+
+### GPU Device
+
+class BaseGPUDevice : public LocalDevice
+  Allocator* gpu_allocator_;  // ProcessState::singleton()->GetGPUAllocator
+  Allocator* cpu_allocator_;  // ProcessState::singleton()->GetCPUAllocator
+  gpu::StreamExecutor* executor_;  //GPUMachineManager()->ExecutorForDevice(gpu_id_)
+  struct StreamGroup
+    gpu::Stream* compute = nullptr;
+    gpu::Stream* host_to_device = nullptr;
+    gpu::Stream* device_to_host = nullptr;
+    gpu::Stream* device_to_device = nullptr;
+  gtl::InlinedVector<StreamGroup*, 4> streams_; //StreamGroupFactory::Global().GetOrCreate(gpu_id_, i, executor_)  这里 i 只能为 0，原因是 max_streams_
+  gtl::InlinedVector<char*, 4> scratch_; //gpu_allocator_->AllocateRaw(Allocator::kAllocatorAlignment, Eigen::kCudaScratchSize + sizeof(unsigned int))
+  std::vector<GPUDeviceContext*> device_contexts_; //new GPUDeviceContext()
+  GpuDeviceInfo* gpu_device_info_ ; //new GpuDeviceInfo
+  struct GpuDeviceInfo
+    perftools::gputools::Stream* stream  //streams_[0]
+    DeviceContext* default_context; //device_contexts_[0]
+    EventMgr* event_mgr ; //em_
+    int gpu_id = -1; //gpu_id_
+  mutex trace_mu_;
+  int gpu_id_ = -1; //options.config.gpu_options().visible_device_list()
+  const bool sync_every_op_ = false; //GPUDevice 中硬代码为 false
+  const int32 max_streams_; //GPUDevice 中硬代码为 1
+  std::unique_ptr<EventMgr> em_; //new EventMgr(executor_, options.config.gpu_options())
+
+class GPUDevice : public BaseGPUDevice
+  bool force_gpu_compatible_ = false; //SessionOptions.ConfigProto.GPUOptions.force_gpu_compatible
 
 class BaseGPUDeviceFactory : public DeviceFactory
   Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
@@ -215,25 +246,56 @@ class BaseGPUDeviceFactory : public DeviceFactory
 class GPUCompatibleCPUDeviceFactory : public DeviceFactory
   Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
 
-class SYCLDeviceFactory : public DeviceFactory
-  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+### CPU Device
+
+class ThreadPoolDevice : public LocalDevic
+  Allocator* allocator_;  // Not owned
 
 class ThreadPoolDeviceFactory : public DeviceFactory
   Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
-```cpp
-注: 系统运行必须注册一个 CPU DeviceFactory
 
-#define REGISTER_LOCAL_DEVICE_FACTORY(device_type, device_factory, ...)
-  static ::tensorflow::dfactory::Registrar<device_factory> _____COUNTER__object_(device_type, ##__VA_ARGS__)
+### SYCL Device
 
-REGISTER_LOCAL_DEVICE_FACTORY(DEVICE_XLA_GPU, XlaGpuDeviceFactory);
-REGISTER_LOCAL_DEVICE_FACTORY(DEVICE_XLA_CPU, XlaCpuDeviceFactory);
-REGISTER_LOCAL_DEVICE_FACTORY(DEVICE_XLA_EXEC, XlaExaDeviceFactory, 40);
-REGISTER_LOCAL_DEVICE_FACTORY("GPU", GPUDeviceFactory, 210)
-REGISTER_LOCAL_DEVICE_FACTORY("CPU", GPUCompatibleCPUDeviceFactory, 70)
-REGISTER_LOCAL_DEVICE_FACTORY("SYCL", SYCLDeviceFactory, 200);
-REGISTER_LOCAL_DEVICE_FACTORY("CPU", ThreadPoolDeviceFactory, 60);
-```
+class SYCLDevice : public LocalDevice
+  Allocator         cpu_allocator_;           // not owned
+  SYCLAllocator     sycl_allocator_;          // not owned
+  SYCLDeviceContext device_context_;
+
+class SYCLDeviceFactory : public DeviceFactory
+  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+
+### Xla Device
+
+class XlaDevice : public LocalDevice
+  const int device_ordinal_;
+  // The name of the device that is used to compile Ops for this XlaDevice.
+  const DeviceType& jit_device_name_;
+  Allocator* xla_allocator_;
+  ::perftools::gputools::Platform* platform_;
+
+class XlaCompilationDevice : public LocalDevice
+  std::unique_ptr<XlaCompilationAllocator> allocator_;
+
+class XlaCpuDeviceFactory : public DeviceFactory
+  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+
+class XlaGpuDeviceFactory : public DeviceFactory
+  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+
+class XlaExaDeviceFactory : public DeviceFactory
+  Status CreateDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
+
+### Rename Device
+
+class RenamedDevice : public Device //目的仅仅是改变名称
+  Device underlying_;
+  bool owns_underlying_;
+
+### Remote Device
+
+class RemoteDevice : public Device
+  const string local_dev_name_;
+
 ## 源码分析
 
 ### Device
@@ -464,8 +526,8 @@ DeviceFactory* DeviceFactory::GetFactory(const string& device_type) //factories[
 
 Status DeviceFactory::AddDevices(const SessionOptions& options, const string& name_prefix, std::vector<Device*>* devices)
 
-1. 查找到已经注册的 CPU 类型的 DeviceFactory，并创建一个 CPU 类型的 Device 加入 devices
-2. 遍历 factories 创建其他已经注册的对应类型的 DeviceFactory， 并创建对应的 Device 加入 devices
+1. 查找到已经注册的 CPU 类型的 DeviceFactory(GPUCompatibleCPUDeviceFactory 或 ThreadPoolDeviceFactory)，并创建一个 CPU 类型的 Device 加入 devices
+2. 遍历 factories 创建其他已经注册的对应类型的 DeviceFactory，并创建对应的 Device 加入 devices
 
 Device* DeviceFactory::NewDevice(const string& type, const SessionOptions& options, const string& name_prefix)
 

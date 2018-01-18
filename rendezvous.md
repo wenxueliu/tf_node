@@ -1,6 +1,11 @@
 
- 主要的功能是在系统之家传递 Tensor, 发送端发送，接受端接受，每个 tensor
- 以 key 为来标记该  Tensor 的源设备和目的设备
+主要的功能是在系统之家传递 Tensor, 发送端发送，接受端接受，每个 tensor
+以 key 为来标记该  Tensor 的源设备和目的设备
+
+key 的格式 : src;src_incarnation;dst;edge_name，当 src == dst 时，在同一 worker
+
+如果 src, dst 在同一 worker，调用 LocalRendezvousImpl 来实现
+否则调用
 
 ### 源文件
 
@@ -23,9 +28,9 @@ class Rendezvous
   struct Args
     DeviceContext* device_context = nullptr;
     AllocatorAttributes alloc_attrs;
-  struct ParsedKey {
+  struct ParsedKey          //格式 src;src_incarnation;dst;edge_name，当 src == dst 时，在同一 worker
     StringPiece src_device;
-    DeviceNameUtils::ParsedName src;
+    DeviceNameUtils::ParsedName src; //src 设备
     uint64 src_incarnation = 0;
     StringPiece dst_device;
     DeviceNameUtils::ParsedName dst;
@@ -90,9 +95,9 @@ class BaseRemoteRendezvous : public RemoteRendezvous
   struct DeferredCall
     const ParsedKey parsed; //Tensor 对应的 key
     DoneCallback done;      //对 key 对应的 Tensor 所做的处理
-  std::vector<DeferredCall> deferred_calls_ GUARDED_BY(mu_);
+  std::vector<DeferredCall> deferred_calls_; //需要处理的 Tensor
   // Active outstanding RecvTensor calls.
-  gtl::FlatSet<BaseRecvTensorCall*> active_ GUARDED_BY(mu_);
+  gtl::FlatSet<BaseRecvTensorCall*> active_;
 
 class RendezvousMgrInterface {
   virtual RemoteRendezvous* Find(int64 step_id) = 0;
@@ -118,13 +123,13 @@ class BaseRecvTensorCall
   virtual Status status() const = 0;
 
 class RpcRecvTensorCall : public BaseRecvTensorCall
-  string src_worker_;
-  string src_rel_device_;
-  WorkerInterface* wi_;
+  string src_worker_;      // "/job:${job_id}/replica:${replica_id}/task:${task_id}"
+  string src_rel_device_;  // "CPU|GPU:id"
+  WorkerInterface* wi_;    // 对应的 worker
   AllocatorAttributes alloc_attrs_;
-  Device* dst_device_;
+  Device* dst_device_;     // 目标设备，从 parsed.dst_device 查找 device_mgr
   CallOptions opts_;
-  RecvTensorRequest req_;
+  RecvTensorRequest req_;  //
   TensorResponse resp_;
   Rendezvous::Args recv_args_;
   Rendezvous::DoneCallback done_;
@@ -418,7 +423,7 @@ Status IntraProcessRendezvous::Send(const ParsedKey& parsed, const Rendezvous::A
 
 Status IntraProcessRendezvous::ParseKey(const string& key, bool is_src, Rendezvous::ParsedKey* parsed)
 
-  Rendezvous::ParseKey(key, parsed)
+  Rendezvous::ParseKey(key, parsed), key 格式为 src;src_incarnation;dst;edge_name
 
 void IntraProcessRendezvous::SameWorkerRecvDone(
     const Rendezvous::ParsedKey& parsed, const Rendezvous::Args& send_args,
@@ -458,13 +463,13 @@ BaseRemoteRendezvous* RpcRendezvousMgr::Create(int64 step_id, const WorkerEnv* w
 
 ### BaseRemoteRendezvous
 
-BaseRemoteRendezvous::BaseRemoteRendezvous(const WorkerEnv* env, int64 step_id)
+BaseRemoteRendezvous::BaseRemoteRendezvous(const WorkerEnv* env, int64 step_id) //env_(env), step_id_(step_id), local_(NewLocalRendezvous()), session_(nullptr) {}
 
 static bool IsLocalDevice(const string& worker_name, const StringPiece device_name)
 
 Status BaseRemoteRendezvous::Initialize(WorkerSession* session)
 
-1. 用  session 初始化  session_
+1. session_ = session
 2. 遍历 deferred_calls_ 中的元素，接受对应的 Tensor，并处理之
 
 WorkerSession* BaseRemoteRendezvous::session() //session_
@@ -472,6 +477,13 @@ WorkerSession* BaseRemoteRendezvous::session() //session_
 Status BaseRemoteRendezvous::Send(const Rendezvous::ParsedKey& parsed, const Rendezvous::Args& args, const Tensor& val, const bool is_dead) //调用 local_->Send(parsed, args, val, is_dead);
 
 Status BaseRemoteRendezvous::ValidateDevices(const ParsedKey& parsed, bool is_src)
+
+必须统一满足如下条件
+
+1. session_ != nullptr
+2. status_.ok()
+3. (is_src == true && session_->worker_name.start_with(parsed.src_device)) ||
+   (!is_src) == false && !session_->worker_name.start_with(parsed.src_device))
 
 void BaseRemoteRendezvous::SameWorkerRecvDone(
     const Rendezvous::ParsedKey& parsed, const Rendezvous::Args& send_args,
@@ -522,14 +534,23 @@ static RpcRecvTensorFreeList* get_call_freelist() //新建一个 RpcRecvTensorFr
 
 void RpcRemoteRendezvous::RecvFromRemoteAsync(const Rendezvous::ParsedKey& parsed, const Rendezvous::Args& recv_args, DoneCallback done)
 
+解析 parsed.src_device 找到  call->src_worker_，找到  src_worker_ 对应的 Worker,
+调用 wroker->RecvTensorAsync 接受 Tensor， 事实上调用 GrpcWorker 的
+RecvTensorAsync 接受 Tensor
 ```
+  //创建 RpcRecvTensorCall
   RpcRecvTensorCall* call = get_call_freelist()->New();
-  WorkerSession* sess = session();
-  WorkerInterface* rwi = sess->worker_cache->CreateWorker(call->src_worker_);
-  sess->device_mgr->LookupDevice(parsed.dst_device, &dst_device);
+  //解析 parsed.src_device 找到  src_worker_，src_rel_device_
+  DeviceNameUtils::SplitDeviceName(parsed.src_device, &call->src_worker_, &call->src_rel_device_)
+  WorkerSession* sess = session();  //创建  session
+  WorkerInterface* rwi = sess->worker_cache->CreateWorker(call->src_worker_); //创建对应的 worker
+  sess->device_mgr->LookupDevice(parsed.dst_device, &dst_device); //找到目的设备
+  //初始化 RpcRecvTensorCall
   call->Init(rwi, step_id_, parsed.FullKey(), recv_args.alloc_attrs, dst_device, recv_args, std::move(done));
+  //call 加入 active_
   RegisterCall(call);
   Ref();
+  //调用 call->wi_->RecvTensorAsync(&opts_, &req_, &resp_, std::move(cb)) 接受 tensor，之后调用回到函数，将 call 从 active_ 中删除，释放 call->wi_
   call->Start([this, call]() {
     // Removes "call" from active_. Prevent StartAbort().
     DeregisterCall(call);

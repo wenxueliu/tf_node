@@ -456,6 +456,10 @@ std::set<int64> host_persistent_alloc_ids_
 std::map<string, std::set<int64>> persistent_alloc_ids_by_devices_
 TensorShapeProto unknown_shape_
 
+CostModel(bool is_global) : is_global_(is_global)
+
+unknown_shape_.set_unknown_rank(true);
+
 void SuppressInfrequent()
 
 1. 如果 count_ 为空，返回, 否则继续步骤2

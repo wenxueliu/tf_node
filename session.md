@@ -1,15 +1,23 @@
 
-## Session
-
 依赖 thread_pool, device
 
 所有设备中的第一个设备非常关键， 作为  client device(CPU device)，用于喂和提取 tensor
+
+遵循 Register-Factorory 模式，先注册，后通过工厂类创建
+
+所有的  session 都保存在全局变量 factories, 通过 Register 注册一个
+SessionFactory. 目前已经注册的包含
+
+```
+    DIRECT_SESSION : new DirectSessionFactory()
+    GRPC_SESSION : new GrpcSessionFactory()
+```
+
 
 ### 术语
 
 log memory
 partial_run
-
 
 ### 环境变量
 
@@ -18,15 +26,27 @@ TF_SYNC_ON_FINISH
 ### 源文件
 
 tensorflow/core/public/session_options.h
+tensorflow/core/public/session.h
+tensorflow/core/framework/session_state.h
+tensorflow/core/common_runtime/session_state.cc
 tensorflow/core/common_runtime/session_factory.h
+tensorflow/core/common_runtime/session_factory.cc
+tensorflow/core/common_runtime/session.cc
+tensorflow/core/common_runtime/session_options.cc
+tensorflow/core/common_runtime/direct_session.h
+tensorflow/core/common_runtime/direct_session.cc
+tensorflow/core/distributed_runtime/rpc/grpc_session.h
+tensorflow/core/distributed_runtime/rpc/grpc_session.cc
 
 ### 数据结构
 
-DirectSessionFactory -> DirectSession
-采用工厂模式
+设置 SessionOptions 的 target 控制具体想用哪种 Session， Session 直接通过 NewSession 创建，目前实现为
+1. target = "grpc://" 时，创建 GrpcSession
+2. target = "" 时，创建 DirectSession
 
-所有的  session 都保存在全局变量 factories, 通过 Register 注册一个
-SessionFactory，
+DirectSessionFactory -> DirectSession
+
+GrpcSessionRegistrar -> GrpcSession -> GrpcRemoteMaster -> MasterService::Stub -> ::grpc::internal::BlockingUnaryCall()
 
 typedef std::unordered_map<string, SessionFactory*> SessionFactories;
 static SessionFactories* factories = new SessionFactories;
@@ -34,36 +54,169 @@ static SessionFactories* factories = new SessionFactories;
 typedef std::pair<int32, thread::ThreadPool*> MapValue;
 static std::map<string, MapValue>* global_pool_map = new std::map<string, MapValue>; //key : 线程名 value: 线程数：线程池对象
 
-static DirectSessionRegistrar registrar; //向全局变量 factories 增加 DIRECT_SESSION:new DirectSessionFactory() 对象
-
-class SessionFactory
-class DirectSessionFactory : public SessionFactory
-class GrpcSessionFactory : public SessionFactory
-
-class SessionFactory
+class SessionFactory //创建或重置 Session
   Session* NewSession(const SessionOptions& options) = 0;
   bool AcceptsOptions(const SessionOptions& options) = 0;
   Status Reset(const SessionOptions& options, const std::vector<string>& containers);
   Status GetFactory(const SessionOptions& options, SessionFactory** out_factory);
 
-class DirectSessionFactory //本地  device 上执行
+class Session
+
+### WorkerSession
+
+struct WorkerSession //封装和和 session 相关的状态
+  string worker_name; //"/job:"${server_def.job_name()}"/replica:0/task:"${server_def.task_index()}
+  std::unique_ptr<WorkerCacheInterface> worker_cache; //new WorkerFreeListCache(worker_cache)
+  std::unique_ptr<DeviceMgr> device_mgr; //worker_env->device_mgr
+  std::unique_ptr<GraphMgr> graph_mgr;  //new GraphMgr(worker_env, worker_env->device_mgr)
+
+class SessionMgr //对 WorkerSession 的增删查
+  typedef std::function<Status(const ServerDef&, WorkerCacheInterface**)> WorkerCacheFactory;
+  const WorkerEnv* const worker_env_;  //WorkerCacheFactory(worker_cache_factory_options(server_def_), worker_cache)
+  WorkerSession legacy_session_;
+  const WorkerCacheFactory worker_cache_factory_; //WorkerCacheFactory(worker_cache_factory_options(server_def_), worker_cache)
+  mutex mu_;
+  std::map<string, std::unique_ptr<WorkerSession>> sessions_ GUARDED_BY(mu_);
+
+### Direction Session
+
+static DirectSessionRegistrar registrar; //向全局变量 factories 增加 DIRECT_SESSION:new DirectSessionFactory() 对象
+
+class DirectSessionRegistrar
+
+class DirectSessionFactory : public SessionFactory //本地  device 上执行
   mutex sessions_lock_;
   std::vector<DirectSession*> sessions_ ; //所有的 DirectSession
 
-class Session
 class DirectSession : public Session
+  const SessionOptions options_;
+  const std::unique_ptr<const DeviceMgr> device_mgr_;
+  std::vector<Device*> devices_;  //所有设备
+  DeviceSet device_set_; //所有设备
+  string session_handle_;
+  bool graph_created_ GUARDED_BY(graph_def_lock_) = false;
+  mutex graph_def_lock_;
+  GraphDef graph_def_ //
+  std::vector<std::pair<thread::ThreadPool*, bool>> thread_pools_; //所有的线程池，优先级 options_.config.session_inter_op_thread_pool_size() > options_.config.use_per_session_threads()
+  Status init_error_;  // Set to an error if construction failed.
+  bool sync_on_finish_ = true; //如果为 true, 阻塞直到所有设备完成队列中的操作
+  mutex executor_lock_;  // protects executors_
+  std::unordered_map<string, std::shared_ptr<ExecutorsAndKeys>> executors_
+  std::unordered_map<string, std::unique_ptr<RunState>> partial_runs_
+  SessionState session_state_; 目前所有活跃的 tensor
+  DirectSessionFactory* const factory_;  // not owned
+  CancellationManager* cancellation_manager_;
+  std::unordered_map<string, string> stateful_placements_
+  std::unique_ptr<SimpleGraphExecutionState> execution_state_
+  std::unique_ptr<FunctionLibraryDefinition> flib_def_;
+  mutex closed_lock_;
+  bool closed_ = false;
+  std::atomic<int64> edge_name_counter_ = {0};
+  std::atomic<int64> handle_name_counter_ = {0};
+  // For generating step ids that are unique across all sessions.
+  static std::atomic_int_fast64_t step_id_counter_;
+  const int64 operation_timeout_in_ms_ = 0;
+  CostModelManager cost_model_manager_;
+  Executor::Args::NodeOutputsCallback node_outputs_callback_ = nullptr;
+
+### GrpcSession
+
+message CreateSessionRequest
+  GraphDef graph_def = 1;
+  ConfigProto config = 2;
+  string target = 3; //目的地址
+
+message CreateSessionResponse
+  string session_handle = 1; //创建 session 后服务端返回该字符串，后续请求都需要携带该字段唯一标明该 session
+  int64 graph_version = 2;
+
+message ExtendSessionRequest //扩展之前的  graph, 比如增加 Node
+  string session_handle = 1; //CreateSession 时返回的 session_handle
+  GraphDef graph_def = 2;    //想要增加的 node
+  int64 current_graph_version = 3;
+
+message ExtendSessionResponse
+  int64 new_graph_version = 4;
+
+message RunStepRequest
+  string session_handle = 1;
+  repeated NamedTensorProto feed = 2;
+  repeated string fetch = 3;
+  repeated string target = 4; //
+  RunOptions options = 5;
+  string partial_run_handle = 6;
+
+message RunStepResponse
+  repeated NamedTensorProto tensor = 1;
+  RunMetadata metadata = 2;
+
+message PartialRunSetupRequest
+  string session_handle = 1;
+  repeated string feed = 2;
+  repeated string fetch = 3;
+  repeated string target = 4;
+
+message PartialRunSetupResponse
+  string partial_run_handle = 1;
+
+message CloseSessionRequest
+  string session_handle = 1;
+
+message CloseSessionResponse
+
+message ResetRequest
+  repeated string container = 1;
+  repeated string device_filters = 2; //至于匹配 device_filters 的被重置
+
+message ResetResponse
+
+message ListDevicesRequest
+  string session_handle = 1;
+
+message ListDevicesResponse
+  repeated DeviceAttributes local_device = 1;
+  repeated DeviceAttributes remote_device = 2;
+
+由 MasterService::AsyncService 实现
+
+实现了 master.proto
+
+static GrpcSessionRegistrar registrar; //注册 "GRPC_SESSION", new GrpcSessionFactory(
+
+class GrpcSessionRegistrar
+
+class GrpcSessionFactory : public SessionFactory
+
+class GrpcSession : public Session
+  SessionOptions options_;                  //server_def.default_session_config()
+  std::unique_ptr<MasterInterface> master_; //GrpcRemoteMaster(master_channel)
+  mutex mu_;
+  string handle_;                           // 从 CreateSessionResponse 中获取
+  int64 current_graph_version_;             //默认 -1，用 CreateSessionRequest 的应答来设置
+
+### 配置
 
 struct SessionOptions
   Env* env;
-  string target; 默认是 local,  ip:port, host:port 等根据任务不同而不同
-  ConfigProto config;
+  string target; 与 LocalMaster 对应，对于  grpc 为 grpc://${HOST}:${PORT}； 该字段必须为空
+  ConfigProto config; //server_def.default_session_config()
 
 message ThreadPoolOptionProto
   int32 num_threads = 1;   //如果为 0, 默认 CPU 的个数
   string global_name = 2;  //如果为空 Compute:$NUM
 
+message GPUOptions {
+  double per_process_gpu_memory_fraction = 1;
+  string allocator_type = 2;
+  int64 deferred_deletion_bytes = 3;
+  bool allow_growth = 4;
+  string visible_device_list = 5; //GPU 列表当与  ConfigProto.device_count 中 GPU 对应的数字不一致时，以 visible_device_list 中个数为准
+  int32 polling_active_delay_usecs = 6;
+  int32 polling_inactive_delay_msecs = 7;
+  bool force_gpu_compatible = 8;
+
 message ConfigProto
-  map<string, int32> device_count = 1;
+  map<string, int32> device_count = 1; //每种类型的设备的数量，比如 {"CPU",2}, {"GPU", 3}，在创建设备的时候就会创建对应个数的设备, 比如  /CPU:0, /CPU:1, /GPU:0, /GPU:1, /GPU2, 具体参考 device.md 的  full name 和 legacy name
   int32 intra_op_parallelism_threads = 2;
   int32 inter_op_parallelism_threads = 5; //默认为 CPU 的数量
   bool use_per_session_threads = 9;
@@ -77,6 +230,22 @@ message ConfigProto
   int64 operation_timeout_in_ms = 11;
   RPCOptions rpc_options = 13;
   ClusterDef cluster_def = 14;
+
+message OptimizerOptions
+  bool do_common_subexpression_elimination = 1; //  如果为  true，用子表达式消除(common subexpression elimination)优化
+  bool do_constant_folding = 2; //如果为 True，用常量展开(constant folding)优化
+  bool do_function_inlining = 4; // 如果为 True，用函数内联(function inlining)优化
+  enum Level
+    L1 = 0; //默认, 包括子表达式消除与常量展开
+    L0 = -1; //不优化
+  Level opt_level = 3;
+  // Control the use of the compiler/jit.  Experimental.
+  enum GlobalJitLevel
+    DEFAULT = 0;  //默认不开启
+    OFF = -1;
+    ON_1 = 1; //值更大优化更激进
+    ON_2 = 2;
+  GlobalJitLevel global_jit_level = 5;
 
 message GraphOptions
   reserved "skip_common_subexpression_elimination";
@@ -125,37 +294,7 @@ message GraphOptions
     std::unique_ptr<Graph> graph;
     const DebugOptions& debug_options;
 
-class DirectSession
-    const SessionOptions options_;
-    const std::unique_ptr<const DeviceMgr> device_mgr_;
-    std::vector<Device*> devices_;  //所有设备
-    DeviceSet device_set_; //所有设备
-    string session_handle_;
-    bool graph_created_ GUARDED_BY(graph_def_lock_) = false;
-    mutex graph_def_lock_;
-    GraphDef graph_def_ //
-    std::vector<std::pair<thread::ThreadPool*, bool>> thread_pools_; //所有的线程池，优先级 options_.config.session_inter_op_thread_pool_size() > options_.config.use_per_session_threads()
-    Status init_error_;  // Set to an error if construction failed.
-    bool sync_on_finish_ = true; //如果为 true, 阻塞直到所有设备完成队列中的操作
-    mutex executor_lock_;  // protects executors_
-    std::unordered_map<string, std::shared_ptr<ExecutorsAndKeys>> executors_
-    std::unordered_map<string, std::unique_ptr<RunState>> partial_runs_
-    SessionState session_state_; 目前所有活跃的 tensor
-    DirectSessionFactory* const factory_;  // not owned
-    CancellationManager* cancellation_manager_;
-    std::unordered_map<string, string> stateful_placements_
-    std::unique_ptr<SimpleGraphExecutionState> execution_state_
-    std::unique_ptr<FunctionLibraryDefinition> flib_def_;
-    mutex closed_lock_;
-    bool closed_ = false;
-    std::atomic<int64> edge_name_counter_ = {0};
-    std::atomic<int64> handle_name_counter_ = {0};
-    // For generating step ids that are unique across all sessions.
-    static std::atomic_int_fast64_t step_id_counter_;
-    const int64 operation_timeout_in_ms_ = 0;
-    CostModelManager cost_model_manager_;
-    Executor::Args::NodeOutputsCallback node_outputs_callback_ = nullptr;
-
+## 源码分析
 
 Status SessionFactory::GetFactory(const SessionOptions& options, SessionFactory** out_factory)
 
@@ -186,6 +325,7 @@ thread::ThreadPool* GlobalThreadPool(const SessionOptions& options)
 
 更加  options 创建线程池对象，并返回
 
+### DirectSessionFactory
 
 bool DirectSessionFactory::AcceptsOptions(const SessionOptions& options) //return options.target.empty();
 
@@ -201,6 +341,8 @@ Status DirectSessionFactory::Reset(const SessionOptions& options, const std::vec
 void DirectSessionFactory::Deregister(const DirectSession* session)
 
 从  sessions_ 中删除 session
+
+### DirectSession
 
 DirectSession::DirectSession(const SessionOptions& options, const DeviceMgr* device_mgr, DirectSessionFactory* const factory)
 
@@ -394,160 +536,243 @@ Close()
   closed_ = true;
   if (factory_ != nullptr) factory_->Deregister(this);
 
+### SessionMgr
+
+SessionMgr::SessionMgr(
+    WorkerEnv* worker_env, const string& default_worker_name,
+    std::unique_ptr<WorkerCacheInterface> default_worker_cache,
+    WorkerCacheFactory worker_cache_factory)
+
+初始化数据成员
+
+Status SessionMgr::CreateSession(const string& session, const ServerDef& server_def)
+
+string SessionMgr::WorkerNameFromServerDef(const ServerDef& server_def) // "/job:"${server_def.job_name()}"/replica:0/task:"${server_def.task_index()}
+
+Status SessionMgr::CreateSession(const string& session, const ServerDef& server_def) //构造  WorkerSession 对象，加入 sessions_ 中
+
+Status SessionMgr::DeleteSession(const string& session) //将 session 对应的 WorkerSession 删除
+
+WorkerSession* SessionMgr::WorkerSessionForSessionUnlocked(const string& session) // 从 sessions_ 中查找 session 对应的 WorkerSession，如果找到，返回，如果找不到返回 legacy_session_
+
+WorkerSession* SessionMgr::WorkerSessionForSession(const string& session) // 从 sessions_ 中查找 session 对应的 WorkerSession，如果找到，返回 ，如果找不到返回 legacy_session_
+WorkerSession* SessionMgr::LegacySession() // return &legacy_session_
 
 
-### 配置选项
+### GrpcSession
+
+Status GrpcSession::Create(const SessionOptions& options, std::unique_ptr<GrpcSession>* out_session)
+
+创建一个 GrpcSession 并保存到  out_session
+
+1. 创建 GrpcSession 对象 session
+2. local_master_registry_  中查找  options.target 对应的 master(LocalMaster)
+3. 设置  GrpcSession 的 master_ 为 master
+4. 将 out_session 指向 session
 
 
+Status GrpcSession::CreateImpl(CallOptions* call_options, const GraphDef& graph)
+
+构建一个 CreateSessionRequest  请求
+```
+    CreateSessionRequest req;
+    *req.mutable_config() = options_.config;
+    *req.mutable_graph_def() = graph;
+    req.set_target(options_.target);
+    ReEncodeConsts(req.mutable_graph_def());
+    CreateSessionResponse resp;
+```
+
+```
+  master_->CreateSession(call_options, &req, &resp);
+    ::grpc::ClientContext ctx;
+    ctx.set_fail_fast(false);
+    SetDeadline(&ctx, call_options->GetTimeout());
+    master_.stub->CreateSession(ctx, &req, &resp)
+        ::grpc::internal::BlockingUnaryCall(channel_, rpcmethod_ExtendSession_, ctx, req, resp);
+    handle_ = resp.mutable_session_handle(
+    current_graph_version_ = resp.graph_version();
+```
+
+Status GrpcSession::Create(const GraphDef& graph)
+
+  CallOptions call_options;
+  call_options.SetTimeout(options_.config.operation_timeout_in_ms());
+  return CreateImpl(&call_options, graph);
+
+Status GrpcSession::Create(const RunOptions& run_options, const GraphDef& graph)
+
+  CallOptions call_options;
+  call_options.SetTimeout(run_options.timeout_in_ms());
+  return CreateImpl(&call_options, graph);
+
+Status GrpcSession::ExtendImpl(CallOptions* call_options, const GraphDef& graph)
+
+1. 如果  handle_ 为空，调用  Create 初始化
+
+2. 构造一个 CreateSessionRequest 请求
+
+```
+  ExtendSessionRequest req;
+  req.set_session_handle(handle_);
+  *req.mutable_graph_def() = graph;
+  req.set_current_graph_version(current_graph_version_);
+  ExtendSessionResponse resp;
+```
+
+```
+  master_->ExtendSession(call_options, &req, &resp);
+    ::grpc::ClientContext ctx;
+    ctx.set_fail_fast(false);
+    SetDeadline(&ctx, call_options->GetTimeout());
+    master_.stub->CreateSession(ctx, &req, &resp)
+        ::grpc::internal::BlockingUnaryCall(channel_, rpcmethod_ExtendSession_, ctx, req, resp);
+    current_graph_version_ = resp.graph_version();
+```
+
+Status GrpcSession::Extend(const GraphDef& graph)
+
+  CallOptions call_options;
+  call_options.SetTimeout(options_.config.operation_timeout_in_ms());
+  return ExtendImpl(&call_options, graph);
+
+Status GrpcSession::Extend(const RunOptions& run_options, const GraphDef& graph)
+
+  CallOptions call_options;
+  call_options.SetTimeout(run_options.timeout_in_ms());
+  return ExtendImpl(&call_options, graph);
+
+Status GrpcSession::RunHelper(const RunOptions& run_options,
+    const std::vector<std::pair<string, Tensor>>& inputs,
+    const std::vector<string>& output_tensor_names,
+    const std::vector<string>& target_node_names, std::vector<Tensor>* outputs,
+    RunMetadata* run_metadata, const string& prun_handle)
+
+构造 MutableRunStepRequestWrapper 消息，
+```
+  req->set_session_handle(handle_);
+  master_->RunStep(call_options, req, resp);
+    ::grpc::ClientContext ctx;
+    ctx.set_fail_fast(false);
+    SetDeadline(&ctx, call_options->GetTimeout());
+    master_.stub->RunStep(ctx, &req, &resp)
+        ::grpc::internal::BlockingUnaryCall(channel_, rpcmethod_CreateSession_, ctx, req, resp);
+```
+获取应答 MutableRunStepResponseWrapper 初始化 outputs, run_metadata
+
+Status GrpcSession::Run(const RunOptions& run_options,
+                        const std::vector<std::pair<string, Tensor>>& inputs,
+                        const std::vector<string>& output_tensor_names,
+                        const std::vector<string>& target_node_names,
+                        std::vector<Tensor>* outputs,
+                        RunMetadata* run_metadata) {
+
+  return RunHelper(run_options, inputs, output_tensor_names, target_node_names, outputs, run_metadata, "");
+
+Status GrpcSession::Run(const std::vector<std::pair<string, Tensor>>& inputs,
+                        const std::vector<string>& output_tensor_names,
+                        const std::vector<string>& target_node_names,
+                        std::vector<Tensor>* outputs) {
+
+  RunOptions run_options;
+  run_options.set_timeout_in_ms(options_.config.operation_timeout_in_ms());
+  return Run(run_options, inputs, output_tensor_names, target_node_names, outputs, nullptr);
+
+Status GrpcSession::RunProto(CallOptions* call_options, MutableRunStepRequestWrapper* req, MutableRunStepResponseWrapper* resp)
+
+```
+  req->set_session_handle(handle_);
+  master_->RunStep(call_options, req, resp);
+    ::grpc::ClientContext ctx;
+    ctx.set_fail_fast(false);
+    SetDeadline(&ctx, call_options->GetTimeout());
+    master_.stub->RunStep(ctx, &req, &resp)
+        ::grpc::internal::BlockingUnaryCall(channel_, rpcmethod_RunStep_, ctx, req, resp);
+```
+
+Status GrpcSession::PRunSetup(const std::vector<string>& input_names, const std::vector<string>& output_names,
+                              const std::vector<string>& target_nodes, string* handle) {
 
 
-### python
+input_names, output_names, target_nodes, handle_ 构造 PartialRunSetupRequest 消息，
 
-InteractiveSession 主要用于 ipython 调试使用
+```
+  master_->partialrunsetup(call_options, req, resp);
+    ::grpc::clientcontext ctx;
+    ctx.set_fail_fast(false);
+    setdeadline(&ctx, call_options->gettimeout());
+    master_.stub->partialrunsetup(ctx, &req, &resp)
+        ::grpc::internal::blockingunarycall(channel_, rpcmethod_partialrunsetup_, ctx, req, resp);
+```
+并获取应答 PartialRunSetupResponse 初始化 handle
 
-关键变量
+Status GrpcSession::PRun(const string& handle, const std::vector<std::pair<string, Tensor>>& inputs,
+                         const std::vector<string>& output_names, std::vector<Tensor>* outputs)
 
-graph
-config
-session
-opened
-closed
-add_shapes
+  return RunHelper(run_options, inputs, output_names, {}, outputs, nullptr, handle);
 
+Status GrpcSession::Close()
 
-关键方法
+1. 创建 CloseSessionRequest
+```
+  master_->CloseSession(call_options, req, resp);
+    ::grpc::clientcontext ctx;
+    ctx.set_fail_fast(false);
+    setdeadline(&ctx, call_options->gettimeout());
+    master_.stub->CloseSession(ctx, &req, &resp)
+        ::grpc::internal::blockingunarycall(channel_, rpcmethod_CloseSession_, ctx, req, resp);
+```
 
-graph(self)
-graph_def(self)
-sess_str(self)
+Status GrpcSession::ListDevices(std::vector<DeviceAttributes>* response)
 
-as_default(self)
+1. 创建 ListDevicesRequest
 
-    ```python
-    c = tf.constant(..)
-    sess = tf.Session()
+```
+  master_->ListDevices(call_options, req, resp);
+    ::grpc::clientcontext ctx;
+    ctx.set_fail_fast(false);
+    setdeadline(&ctx, call_options->gettimeout());
+    master_.stub->ListDevices(ctx, &req, &resp)
+        ::grpc::internal::blockingunarycall(channel_, rpcmethod_ListDevices_, ctx, req, resp);
+```
 
-    with sess.as_default():
-      assert tf.get_default_session() is sess
-      print(c.eval())
-    ```
+3. 接受 ListDevicesResponse  设置 response
 
-    *N.B.* The `as_default` context manager *does not* close the
-    session when you exit the context, and you must close the session
-    explicitly.
+void GrpcSession::SetRemoteMaster(std::unique_ptr<MasterInterface> master) //master_ = std::move(master);
 
-    Alternatively, you can use `with tf.Session():` to create a
-    session that is automatically closed on exiting the context,
-    including when an uncaught exception is raised.
+Status GrpcSession::Reset(const SessionOptions& options, const std::vector<string>& containers)
 
-    *N.B.* The default session is a property of the current thread. If you
-    create a new thread, and wish to use the default session in that
-    thread, you must explicitly add a `with sess.as_default():` in that
-    thread's function.
+1. 创建 grpc channel ::grpc::CreateCustomChannel("dns:///" + options.target, ::grpc::InsecureChannelCredentials(), args);
+2. 创建 grpc GrpcRemoteMaster 对象
+3. 构造 ResetRequest
 
-    *N.B.* Entering a `with sess.as_default():` block does not affect
-    the current default graph. If you are using multiple graphs, and
-    `sess.graph` is different from the value of @{tf.get_default_graph},
-    you must explicitly enter a `with sess.graph.as_default():` block
-    to make `sess.graph` the default graph.
+```
+  master_->Reset(call_options, req, resp);
+    ::grpc::clientcontext ctx;
+    ctx.set_fail_fast(false);
+    setdeadline(&ctx, call_options->gettimeout());
+    master_.stub->Reset(ctx, &req, &resp)
+        ::grpc::internal::blockingunarycall(channel_, rpcmethod_Reset_, ctx, req, resp);
+```
 
-    ```python
-    c = tf.constant(...)
-    sess = tf.Session()
-    with sess.as_default():
-      print(c.eval())
-    # ...
-    with sess.as_default():
-      print(c.eval())
+### GrpcSessionFactory
 
-    sess.close()
-    ```
-run(self, fetches, feed_dict=None, options=None, run_metadata=None):
+bool AcceptsOptions(const SessionOptions& options)
 
-由具体的 C 实现
+options.target 以 “grpc://" 开头，返回  true
 
+Session* NewSession(const SessionOptions& options)
 
-    The `fetches` argument may be a single graph element, or an arbitrarily
-    nested list, tuple, namedtuple, dict, or OrderedDict containing graph
-    elements at its leaves.  A graph element can be one of the following types:
+新建一个 GrpcSession
 
-    * An @{tf.Operation}.
-      The corresponding fetched value will be `None`.
-    * A @{tf.Tensor}.
-      The corresponding fetched value will be a numpy ndarray containing the
-      value of that tensor.
-    * A @{tf.SparseTensor}.
-      The corresponding fetched value will be a
-      @{tf.SparseTensorValue}
-      containing the value of that sparse tensor.
-    * A `get_tensor_handle` op.  The corresponding fetched value will be a
-      numpy ndarray containing the handle of that tensor.
-    * A `string` which is the name of a tensor or operation in the graph.
+Status Reset(const SessionOptions& options, const std::vector<string>& containers)
 
-    The value returned by `run()` has the same shape as the `fetches` argument,
-    where the leaves are replaced by the corresponding values returned by
-    TensorFlow.
-
-    ```python
-       a = tf.constant([10, 20])
-       b = tf.constant([1.0, 2.0])
-       # 'fetches' can be a singleton
-       v = session.run(a)
-       # v is the numpy array [10, 20]
-       # 'fetches' can be a list.
-       v = session.run([a, b])
-       # v is a Python list with 2 numpy arrays: the 1-D array [10, 20] and the
-       # 1-D array [1.0, 2.0]
-       # 'fetches' can be arbitrary lists, tuples, namedtuple, dicts:
-       MyData = collections.namedtuple('MyData', ['a', 'b'])
-       v = session.run({'k1': MyData(a, b), 'k2': [b, a]})
-       # v is a dict with
-       # v['k1'] is a MyData namedtuple with 'a' (the numpy array [10, 20]) and
-       # 'b' (the numpy array [1.0, 2.0])
-       # v['k2'] is a list with the numpy array [1.0, 2.0] and the numpy array
-       # [10, 20].
-    ```
-
-partial_run(self, handle, fetches, feed_dict=None)
+发送重置 ResetRequest，GrpcSession::Reset(options, containers);
 
 
-    ```python
-    a = array_ops.placeholder(dtypes.float32, shape=[])
-    b = array_ops.placeholder(dtypes.float32, shape=[])
-    c = array_ops.placeholder(dtypes.float32, shape=[])
-    r1 = math_ops.add(a, b)
-    r2 = math_ops.multiply(r1, c)
+### GrpcSessionRegistrar
 
-    h = sess.partial_run_setup([r1, r2], [a, b, c])
-    res = sess.partial_run(h, r1, feed_dict={a: 1, b: 2})
-    res = sess.partial_run(h, r2, feed_dict={c: res})
-    ```
+GrpcSessionRegistrar()
 
-partial_run_setup(self, fetches, feeds=None)
-
-TODO
-
-make_callable(self, fetches, feed_list=None, accept_options=False):
-
-TODO
-
-\_do_run(self, handle, target_list, fetch_list, feed_dict, options, run_metadata):
-
-对 target_list, fetch_list, feed_list 做转换，不同的 handle 是否为 None,
-调用不同的函数
-
-\_register_dead_handle(self, handle):
-
-当 self._dead_handles 的数量超过 10 个, 经过处理后，加入 feed 和 fetches, 之后调用 self.run
-
-所做的处理:
-
-从 graph 中的 handle 对应的设备删除 deleter_key 对应的 handler, 将被删除的
-handler 加入 graph._handle_deleters
-
-\_update_with_movers(self, feed_dict, feed_map):
-
-TODO
-
-
+factories 加入 {"GRPC_SESSION", new GrpcSessionFactory()}
 

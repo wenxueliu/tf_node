@@ -1,5 +1,145 @@
 
+## 编译器常用优化方法
+
+### 常量传播
+
+在编译优化时， 能够将计算出结果的变量直接替换为常量。
+
+```
+void main(){
+    int a=1;
+    printf("%d",a);
+}
+```
+
+编译器在进行编译的时候，将a直接由1替换。因此优化后的代码为：
+
+```
+void main(O{
+    printf("%d",1);
+}
+```
+
+### 常量折叠
+
+在编译优化时，多个变量进行计算时，而且能够直接计算出结果，那么变量将有常量直接替换。
+
+```
+void main(){
+    int a=3+1-3*1;
+    print("%d",a);
+}
+```
+编译器在进行编译时，将a直接由1替换，因此优化后的代码：
+
+```
+void mian(){
+    print("%d",1);
+}
+```
+
+### 复写传播
+两个相同的变量可以用一个代替。
+
+```
+public void main(){
+    int x=3;
+    int y=4;
+    y=x;
+}
+```
+编译器在进行编译的时候，发现y和x相等，因此用x来代替y，优化后的代码如下：
+
+```
+public void mian(){
+    int x=3；
+}
+```
+
+### 公共子表式消除
+
+如果一个表达式E已经计算过了，并且从先前的计算到现在的E中的变量都没有发生变化，那么E的此次出现就成为了公共子表达式。
+
+```
+public void main(){
+    int a=3;
+    int c=8;
+    int x=0;
+    x=(a+c)*12+(c+a)*2;//此处的a+c便是公共子表达式
+}
+```
+经过优化之后的代码可能如下
+
+```
+public void main(){
+    int a=3;
+    int c=8;
+    int x=0;
+    x=E*12+E*2;//此时某些编译器还会进行代数化简x=E*14;
+}
+```
+
+### 无用代码消除
+
+永远不能被执行到的代码或者没有任何意义的代码会被清除掉。
+
+```
+public void main(){
+    int x=9;
+    x=x;
+    ...
+}
+```
+
+因此优化过后的代码如下
+
+```
+public void main(){
+    int x=9;
+    ...
+}
+```
+
+### 数组范围检查消除
+
+数组边界检查不是必须在运行期间一次不漏的检查，而是可以协商的。如果及时编译器能根据数据流分析出变量的取值范围在[0,max_length]之间，那么在循环期间就可以把数组的上下边界检查消除。
+
+### 方法内联
+编译器最终要的优化手段，可减少方法调用的成本，并未其他优化做基础。
+
+### 逃逸分析
+
+分析对象动态作用域，一旦确定对象不会发生方法逃逸和线程逃逸，就可以对这个变量进行高效的优化，比如栈上分配、同步消除、标量替换等。
+
+
+
+
+
+
+
+目前包含的优化有
+
+1. 子表达式消除
+2. 常量展开
+3. 函数内联
+
 ## 数据结构
+
+message OptimizerOptions
+  bool do_common_subexpression_elimination = 1; //  如果为  true，用子表达式消除(common subexpression elimination)优化
+  bool do_constant_folding = 2; //如果为 True，用常量展开(constant folding)优化
+  bool do_function_inlining = 4; // 如果为 True，用函数内联(function inlining)优化
+  enum Level
+    L1 = 0; //默认, 包括子表达式消除与常量展开
+    L0 = -1; //不优化
+  Level opt_level = 3;
+  // Control the use of the compiler/jit.  Experimental.
+  enum GlobalJitLevel
+    DEFAULT = 0;  //默认不开启
+    OFF = -1;
+    ON_1 = 1; //值更大优化更激进
+    ON_2 = 2;
+  GlobalJitLevel global_jit_level = 5;
 
 GraphOptimizationPassOptions -> GraphOptimizationPass
 
@@ -64,7 +204,6 @@ Status OptimizationPassRegistry::RunGrouping(Grouping grouping, const GraphOptim
 
 如果图中某个节点的依赖都是常量， 在 CPU Device  上将计算后的结果替代已有的节点，这样可以节省计算资源的消耗。
 与计算机语言中的常量优化的思路是一样的
-
 
 void AddNodeToConstantGraph(Node* n, std::unordered_map<Node*, std::vector<Node*>>* node_map, Graph* constant_graph)
 
