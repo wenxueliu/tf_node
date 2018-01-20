@@ -21,7 +21,7 @@ tensorflow/python/ops/array_ops.py
 通过 tf.contrib.framework.local_variable() 或 variable_scope.variable() 将一个变量加入本地变量，
 通过 tf.local_variables() 获取本地变量
 
-模型变量用于模型中定义的变量，ops.GraphKeys.MODEL_VARIABLES 中，
+模型变量用于模型中定义的变量，比如 FP 中。在 ops.GraphKeys.MODEL_VARIABLES 中，
 通过 tf.contrib.framework.model_variable() 或 tf.contrib.framework.add_model_variable(var),
 variable_scope.variable() 将一个变量加入局部变量，
 通过 tf.model_variables() 获取模型变量
@@ -144,3 +144,21 @@ cpp 实现参考 ./tensorflow/tensorflow/core/ops/state_ops.cc
 
 通过 ops.register_dense_tensor_like_type 可以查到所有的 Tensor 类型
 通过 ops.register_tensor_conversion_function 可以查到基本类型是如何转换为 Tensor 类型的
+
+
+## 实例
+
+```
+import tensorflow as tf
+w = tf.Variable('a', trainable=True)
+w1  = tf.Variable(w.initialized_value())
+
+sess = tf.Session()
+init = tf.global_variables_initializer()
+sess.run(init)
+print sess.run(w)
+print sess.run(w1)
+sess.run(tf.global_variables()) ## 返回全局变量的 list
+sess.run(tf.trainable_variables()) ## 返回可训练变量的 list
+```
+
