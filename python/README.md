@@ -24,9 +24,59 @@ https://docs.google.com/forms/d/1mUztUlK6_z31BbMW5ihXaYHlhBcbDd94mERe-8XHyoI/vie
 
 ## 困惑新手的几个名词解释
 
-Variables
-Placeholders
-ops.name_scope
+### broadcasting
+
+即在进行矩阵想加时，如果后面是一个数字，这在矩阵中是不允许的，必须是向量，broadcasting
+自动帮你做了这件事情，也就是你可以用一个矩阵和一个数字相加
+
+### Variables
+
+参见 variable.md
+
+### Placeholders
+
+### name_scope
+
+### global_step
+
+1. 为 Variables.Variables, ops.Tensor 或 resource_variable_ops.ResourceVariable 的实例
+2. 是一个 scalar
+3. 基本类型为 int。
+4. 保存在 ops.GraphKeys.GLOBAL_STEP 或  graph 的  tensor 中
+
+有什么用 ：TODO
+
+用法
+
+```python
+import tensorflow as tf;
+global_step = tf.contrib.framework.get_or_create_global_step()
+sess = tf.Session()
+init = tf.global_variables_initializer()
+sess.run(init)
+print tf.train.global_step(sess, global_step) # 此前必须初始化
+```
+
+
+创建 global_step 的方法
+```
+    return variable_scope.get_variable(
+        ops.GraphKeys.GLOBAL_STEP,
+        shape=[],
+        dtype=dtypes.int64,
+        initializer=init_ops.zeros_initializer(),
+        trainable=False,
+        collections=[ops.GraphKeys.GLOBAL_VARIABLES, ops.GraphKeys.GLOBAL_STEP])
+```
+
+global_step 传递给 minimize，每次迭代，global_step 就会加一
+
+## epoch
+
+
+
+
+
 
 ## Variables 和 Placeholders
 
@@ -47,6 +97,25 @@ Placeholders : 要喂给算法的数据
 Variables : 待求的数据
 
 ## name_scope
+
+常用在函数定义中，如
+``` python
+def exponential_decay(learning_rate, global_step, decay_steps, decay_rate,
+                 staircase=False, name=None):
+  with ops.name_scope(name, "ExponentialDecay",
+                 [learning_rate, global_step,
+                  decay_steps, decay_rate]) as name:
+    learning_rate = ops.convert_to_tensor(learning_rate, name="learning_rate")
+    dtype = learning_rate.dtype
+    global_step = math_ops.cast(global_step, dtype)
+    decay_steps = math_ops.cast(decay_steps, dtype)
+    decay_rate = math_ops.cast(decay_rate, dtype)
+    p = global_step / decay_steps
+    if staircase:
+      p = math_ops.floor(p)
+    return math_ops.multiply(learning_rate, math_ops.pow(decay_rate, p), name=name)
+```
+
 
 ### Loss Function
 
