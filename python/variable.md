@@ -26,12 +26,20 @@ tensorflow/python/ops/array_ops.py
 variable_scope.variable() 将一个变量加入局部变量，
 通过 tf.model_variables() 获取模型变量
 
+模型变量一个重要的用途是从  checkpoint 中恢复，比如你正在训练一个模型，结果中途宕机或程序出现 bug
+导致退出，为了避免从头开始训练，一般的做法是每训练 N 步，将模型参数保存到文件中，这样下次启动就从
+上次训练结束的位置重新开始训练
+
+模型变量还有一个重要的用途是，在迁移学习的时候，你已经有另外一个模型的参数，为了将该参数应用的新的
+模型，将之前模型的参数保存起来，新的模型可以选择性地添加部分模型参数。
+
 可训练变量被 optimizer 训练的变量, 保存在 ops.GraphKeys.TRAINABLE_VARIABLES 中，
 在创建变量的时候，通过指定参数 trainable 为 True，使其加入可训练变量
 通过 tf.trainable_variables() 获取可训练变量
 
 移动平均变量，保存在 ops.GraphKeys.MOVING_AVERAGE_VARIABLES
 通过 tf.moving_average_variables() 获取移动平均变量
+
 
 ### 变量初始化
 
@@ -146,6 +154,41 @@ cpp 实现参考 ./tensorflow/tensorflow/core/ops/state_ops.cc
 通过 ops.register_tensor_conversion_function 可以查到基本类型是如何转换为 Tensor 类型的
 
 
+### 创建变量
+
+local_variable(initial_value, validate_shape=True, name=None)
+
+
+### 初始化变量
+
+zero_initializer(ref, use_locking=True, name="zero_initializer")
+add_model_variable(var) : 将  var 加入 ops.GraphKeys.MODEL_VARIABLES
+assign_from_values(var_names_to_values) : TODO
+
+### 获取变量
+
+get_variables(scope=None, suffix=None, collection=ops.GraphKeys.GLOBAL_VARIABLES)
+get_model_variables(scope=None, suffix=None)
+get_local_variables(scope=None, suffix=None)
+get_trainable_variables(scope=None, suffix=None)
+get_variables_to_restore(include=None, exclude=None)
+get_variables_by_suffix(suffix, scope=None)
+get_variables_by_name(given_name, scope=None)
+get_unique_variable(var_op_name)
+get_variable_full_name(var)
+assign_from_checkpoint(model_path, var_list, ignore_missing_vars=False)
+assign_from_checkpoint_fn(model_path, var_list, ignore_missing_vars=False, reshape_variables=False)
+filter_variables(var_list, include_patterns=None, exclude_patterns=None, reg_search=True)
+
+### 特殊变量
+
+assert_global_step(global_step_tensor)
+assert_or_get_global_step(graph=None, global_step_tensor=None)
+get_global_step(graph=None)
+create_global_step(graph=None)
+get_or_create_global_step(graph=None)
+
+
 ## 实例
 
 ```
@@ -162,3 +205,17 @@ sess.run(tf.global_variables()) ## 返回全局变量的 list
 sess.run(tf.trainable_variables()) ## 返回可训练变量的 list
 ```
 
+
+## 源码分析
+
+def assign_from_checkpoint(model_path, var_list, ignore_missing_vars=False)
+
+1. 将  var_list 转为 dict 保存在 grouped_vars
+2. 遍历 grouped_vars，读取 model_path 找到每个 key 对应的 value
+
+返回值直接传递给  sess.run() 即可获取
+
+def assign_from_checkpoint_fn(model_path, var_list,
+    ignore_missing_vars=False, reshape_variables=False)
+
+调用  saver.restore  从 model_path 恢复 var_list 对应的变量
