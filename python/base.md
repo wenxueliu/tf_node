@@ -8,17 +8,45 @@ scipy.misc : 操作图片
 PIL.Image
 matplotlib.pyplot
 from io import BytesIO
+shutil: help(shutil) shutil.rmtree
+glob : glob.glob
 
 
-##
+## 迭代器
 
 zip 将两个集合一起遍历 for l1,l2 in zip(list1, list2)
 enumerate 遍历集合时，包括索引  for idx, e in enumerate(list)
 
+## 数值
+
+float("Inf")
+
 ## 装饰器
 
-  @property
-  @staticmethod
+  @classmethod
+  @property   : 可以直接当属性用
+  @staticmethod :  声明为静态方法
+  @contextlib.contextmanager :
+  with  : https://www.ibm.com/developerworks/cn/opensource/os-cn-pythonwith/
+  yield : https://www.ibm.com/developerworks/cn/opensource/os-cn-python-yield/
+
+## 抽象方法
+
+```python
+class DataDecoder(object):
+  """An abstract class which is used to decode data for a provider."""
+
+  __metaclass__ = abc.ABCMeta
+
+  @abc.abstractmethod
+  def decode(self, data, items):
+    pass
+
+  @abc.abstractmethod
+  def list_items(self):
+    pass
+```
+
 
 ## 判断
 
@@ -42,3 +70,10 @@ enumerate 遍历集合时，包括索引  for idx, e in enumerate(list)
 ## 弱引用
 
 weakref.WeakKeyDictionary()
+
+
+##
+
+def device_key(dev):
+  return "" if dev is None else dev
+for dev in sorted(six.iterkeys(ops_on_device), key=device_key)
