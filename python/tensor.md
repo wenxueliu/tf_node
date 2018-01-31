@@ -3,15 +3,70 @@
 
 broadcasting 如何理解?
 
-### tf.placeholder
+## 创建常量的几种方式
+
+### 方式一
+
+>>> a = tf.constant(np.arange(6).reshape(2,3))
+
+### 方式二
+
+>>> a = tf.convert_to_tensor([[1, 0, 3], [3, 0, 0]])
+
+## 创建变量的几种方式
+
+方式一
+
+tf.Variable(a)
+
+方式二
+
+tf.get_variable
+
+>>> a = tf.constant(np.arange(6).reshape(2,3))
+
+## tf.placeholder
 
 placeholder(dtype, shape=None, name=None)
 
 x = tf.placeholder(tf.float32, shape=(1024, 1024))
 
-### tf.Variable
 
+### tf.variable_scope  与 tf.get_variable
 
+```python
+with tf.variable_scope("foo"):
+    v = tf.get_variable("v", [1])  # v.name == "foo/v:0"
+    w = tf.get_variable("w", [1])  # w.name == "foo/w:0"
+with tf.variable_scope("foo", reuse=True):
+    v1 = tf.get_variable("v")  # The same as v above.
+
+with tf.variable_scope("foo"):
+    with tf.variable_scope("bar"):
+        v = tf.get_variable("v", [1])
+        assert v.name == "foo/bar/v:0"
+
+with tf.variable_scope("foo"):
+    v = tf.get_variable("v", [1])
+with tf.variable_scope("foo", reuse=True):
+    v1 = tf.get_variable("v", [1])
+assert v1 == v
+
+with tf.variable_scope("foo") as scope:
+    v = tf.get_variable("v", [1])
+    scope.reuse_variables()
+    v1 = tf.get_variable("v", [1])
+assert v1 == v
+
+with tf.variable_scope("foo"):
+    v = tf.get_variable("v", [1])
+    v1 = tf.get_variable("v", [1])
+    #  Raises ValueError("... v already exists ...").
+
+with tf.variable_scope("foo", reuse=True):
+    v = tf.get_variable("v", [1])
+    #  Raises ValueError("... v does not exists ...").
+```
 ### tf.constant
 
 constant(value, dtype=None, shape=None, name='Const', verify_shape=False)
@@ -207,6 +262,16 @@ dtype('float64')
 tf.float64
 
 
+## dtypes.as_dtype
+
+>>> a = tf.convert_to_tensor(1)
+>>> a.dtype
+tf.int32
+>>> from tensorflow.python.framework import dtypes
+>>> dtypes.as_dtype(a.dtype)
+tf.int32
+
+
 ### tf.expand_dims
 
 >>> v = tf.constant([1, 2, 3, 4, 5, 6, 7])
@@ -277,6 +342,20 @@ array([[22, 23],
 array([[0, 1, 2],
        [3, 4, 5]])
 
+## tf.strided_slice
+
+左闭右开
+
+>>> input = tf.convert_to_tensor([[[1, 1, 1], [2, 2, 2]], [[3, 3, 3], [4, 4, 4]], [[5, 5, 5], [6, 6, 6]]])
+>>> sess.run(tf.strided_slice(input, [1, 0, 0], [2, 1, 3], [1, 1, 1]))
+array([[[3, 3, 3]]], dtype=int32)
+>>> sess.run(tf.strided_slice(input, [1, 0, 0], [2, 2, 3], [1, 1, 1]))
+array([[[3, 3, 3],
+        [4, 4, 4]]], dtype=int32)
+>>> sess.run(tf.strided_slice(input, [1, -1, 0], [2, -3, 3], [1, -1, 1]))
+array([[[4, 4, 4],
+        [3, 3, 3]]], dtype=int32)
+
 ### tf.tenspose
 
 transpose(a, perm=None, name='transpose')
@@ -337,13 +416,224 @@ array([[1],
 
 ## tf.train.string_input_producer
 
+string_input_producer(string_tensor, num_epochs=None, shuffle=True, seed=None, capacity=32, shared_name=None, name=None, cancel_op=None)
 创建一个 FIFO 队列
 
-##
+## tf.nn.conv2d
+
+conv2d(input, filter, strides, padding, use_cudnn_on_gpu=None, data_format=None, name=None)
+
+## tf.nn.relu
+
+relu(features, name=None)
+
+## tf.nn.max_pool
+
+max_pool(value, ksize, strides, padding, data_format='NHWC', name=None)
+
+## tf.nn.dropout
+
+dropout(x, keep_prob, noise_shape=None, seed=None, name=None)
+
+## tf.nn.bias_add
+
+bias_add(value, bias, data_format=None, name=None)
+
+用 tf.nn.bias_add 替代 tf.add 用于增加 bias，原因是  tf.nn.bias_add 自带
+broadcasting.
+
+## tf
+
+value = [0, 1, 2, 3, 4, 5, 6, 7]
+init = tf.constant_initializer(value)
+with tf.Session():
+    x = tf.get_variable('x', shape=[2, 4], initializer=init)
+    x.initializer.run()
+    print(x.eval())
+    x = tf.get_variable('x', shape=[3, 4], initializer=init)
+    x.initializer.run()
+    print(x.eval())
+    x = tf.get_variable('x', shape=[2, 3], initializer=init)
+    x.initializer.run()
+    print(x.eval())
+
+## tf.add_n
+
+add_n(inputs, name=None) :  将 inputs 中每个元素的对应元素相加
+
+## tf.cumprod  tf.cumsum
+
+>>> x =[ [1, 2, 3],[4,5,6]]
+>>> sess.run(tf.cumprod(tf.convert_to_tensor(x), axis=1))
+array([[  1,   2,   6],
+       [  4,  20, 120]], dtype=int32)
+>>> sess.run(tf.cumprod(tf.convert_to_tensor(x), axis=0))
+array([[ 1,  2,  3],
+       [ 4, 10, 18]], dtype=int32)
+>>> sess.run(tf.cumsum(tf.convert_to_tensor(x)))
+array([[1, 2, 3],
+       [5, 7, 9]], dtype=int32)
+>>> sess.run(tf.cumsum(tf.convert_to_tensor(x), axis=1))
+array([[ 1,  3,  6],
+       [ 4,  9, 15]], dtype=int32)
+
+
+## tf.exponential_decay
+
+exponential_decay(learning_rate, global_step, decay_steps, decay_rate, staircase=False, name=None)
+
+decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
+
+## tf.control_dependencies
+
+control_dependencies(control_inputs)
+
+只有 control_inputs 中的 Operation 或 Tensor
+执行或计算之后，才能继续执行当前上下文的内容
+
+## tf.reduce_sum
+
+reduce_sum(input_tensor, axis=None, keep_dims=False, name=None, reduction_indices=None):
+
+>>> import tensorflow as tf
+>>> a = tf.convert_to_tensor([[1, 2, 3], [3, 2, 1]])
+>>> sess.run(a)
+array([[1, 2, 3],
+       [3, 2, 1]], dtype=int32)
+>>> sess.run(tf.reduce_sum(2))
+2
+>>> sess.run(tf.reduce_sum(a))
+12
+>>> sess.run(tf.reduce_sum(a, 0))
+array([4, 4, 4], dtype=int32)
+>>> sess.run(tf.reduce_sum(a, 0, keep_dims=True))
+array([[4, 4, 4]], dtype=int32)
+>>> sess.run(tf.reduce_sum(a, 1, keep_dims=True))
+array([[6],
+       [6]], dtype=int32)
+>>> sess.run(tf.reduce_sum(a, [0,1], keep_dims=True))
+array([[12]], dtype=int32)
+
+## tf.count_nonzero
+
+```python
+>>> import tensorflow as tf
+>>> a = tf.convert_to_tensor([[1, 0, 3], [3, 0, 0]])
+>>> sess.run(tf.count_nonzero(a))
+3
+>>> sess.run(tf.count_nonzero(a, 1))
+array([2, 1])
+>>> sess.run(tf.count_nonzero(a, 0))
+array([2, 0, 1])
+>>> sess.run(tf.count_nonzero(a, 0, keep_dims=True))
+array([[2, 0, 1]])
+>>> sess.run(tf.count_nonzero(a, [0, 1], keep_dims=True))
+array([[3]])
+```
+
+## tf.reduce_mean
+
+## ops.convert_to_tensor
+
+convert_to_tensor(value, dtype=None, name=None, preferred_dtype=None)
+
+将一个Python Object, 转为  Tensor，可以为 Tensor, numpy arrays, Python List
+Python scalars
+
+## tf.nn.zero_fraction
+
+```python
+>>> a = tf.convert_to_tensor([1, 0, 0, 0, 1])
+>>> sess = tf.Session()
+>>> sess.run(tf.nn.zero_fraction(a))
+0.60000002
+```
+
+## tf.pad
+```python
+>>> a = tf.convert_to_tensor([[1,2,3], [4, 5, 6]])
+>>> sess
+<tensorflow.python.client.session.Session object at 0x10dbe46d0>
+>>> sess.run(tf.pad(a, [[2, 1], [2, 1]])
+... )
+array([[0, 0, 0, 0, 0, 0],
+       [0, 0, 0, 0, 0, 0],
+       [0, 0, 1, 2, 3, 0],
+       [0, 0, 4, 5, 6, 0],
+       [0, 0, 0, 0, 0, 0]], dtype=int32)
+>>> sess.run(tf.pad(a, [[2, 1], [1, 2]]))
+array([[0, 0, 0, 0, 0, 0],
+       [0, 0, 0, 0, 0, 0],
+       [0, 1, 2, 3, 0, 0],
+       [0, 4, 5, 6, 0, 0],
+       [0, 0, 0, 0, 0, 0]], dtype=int32)
+```
+## tf.group
+
+group(inputs, **kwargs)
+
+1. 对  inputs 根据 device 排序
+2. 该语句执行完成，inputs 的每个变量都已经完成
+
+## SparseTensor
+
+稀疏矩阵
+
+SparseTensor(indices=[[0, 0], [1, 2]], values=[1, 2], dense_shape=[3, 4])
+
+等于
+
+```python
+[[1, 0, 0, 0]
+ [0, 0, 2, 0]
+ [0, 0, 0, 0]]
+```
+
+## tf.size
+
+size(input, name=None, out_type=tf.int32)
+
+```python
+# 't' is [[[1, 1, 1], [2, 2, 2]], [[3, 3, 3], [4, 4, 4]]]]
+size(t) ==> 12
+``k`
+
+## tf.rank
+
+rank(input, name=None)
+
+```python
+# 't' is [[[1, 1, 1], [2, 2, 2]], [[3, 3, 3], [4, 4, 4]]]
+# shape of tensor 't' is [2, 2, 3]
+rank(t) ==> 3
+```
+
+## tf.range
+
+range(start, limit=None, delta=1, dtype=None, name='range')
+
+```python
+# 'start' is 3
+# 'limit' is 18
+# 'delta' is 3
+tf.range(start, limit, delta) ==> [3, 6, 9, 12, 15]
+
+# 'start' is 3
+# 'limit' is 1
+# 'delta' is -0.5
+tf.range(start, limit, delta) ==> [3, 2.5, 2, 1.5]
+
+# 'limit' is 5
+tf.range(limit) ==> [0, 1, 2, 3, 4]
+```
 
 ## TODO
 
 tf.Coordinator
 tf.train.Saver
 tf.parse_single_example
+tf.image.resize_image_with_crop_or_pad
+tf.random_crop
+
+
 
