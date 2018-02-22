@@ -1,4 +1,12 @@
 
+## 重要模块
+
+tensorflow/python/training
+tensorflow/contrib/slim
+tensorflow/contrib/training
+tensorflow/contrib/metrics
+tensorflow/contrib/losses
+
 
 
 ## 预备知识
