@@ -1,5 +1,15 @@
 
 
+
+replicas
+worker
+job
+ps  : 参数服务器
+chief : 
+
+
+
+
 graph, Session, Server, job, task, cluster 之间的关系
 
 一个 cluster 下有多个 job，一个 job 只能属于一个 cluster
