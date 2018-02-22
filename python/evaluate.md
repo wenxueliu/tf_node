@@ -75,9 +75,11 @@ def \_evaluate_once(checkpoint_path,
                 hooks=None,
                 config=None)
 
-1. 增加 hooks, evaluation.StopAfterNEvalsHook, evaluation.SummaryAtEndHook 到 hook
-2. 执行 eval_op 操作，具体的执行多少次，需要在 hooks 中增加 evaluation.StopAfterNEvalsHook 来指定
-执行完之后，执行 final_op
+1. 获取 eval_step( 0 或 ops.GraphKeys.EVAL_STEP)
+2. 将 eval_step + 1 加入 eval_ops
+3. 将 final_op 加入 hooks
+4. 执行 eval_op 操作，具体的执行多少次，需要在 hooks 中增加 evaluation.StopAfterNEvalsHook 来指定
+5. 执行 eval_ops, feed_dict 喂数据给 eval_ops
 
 ```
 tensorflow/contrib/training/python/training/evaluation.py
