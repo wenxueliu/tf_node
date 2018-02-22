@@ -1,4 +1,5 @@
 
+ 主要用于  TensorBoard 查看一些运行时统计信息
 
 1. 默认所有的元素都加入了变量集合 ops.GraphKeys.SUMMARIES
 2. 可以通过  op.get_collection(ops.GraphKeys.SUMMARIES) 获取所有变量
@@ -72,7 +73,7 @@ def close(self)
 
 ### FileWriterCache
 
-保存 logdir
+保存 logdir: FileWriter 的映射关系
 
 ## 其他
 
@@ -138,8 +139,6 @@ def merge_all(key=_ops.GraphKeys.SUMMARIES)
 def get_summary_description(node_def)
 
 获取 node_def.attr['description']
-
-
 
 
 ```
