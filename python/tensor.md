@@ -87,8 +87,7 @@ squeeze(input, axis=None, name=None, squeeze_dims=None)
 >>> v = tf.constant(1.0, shape=[1, 2, 1, 3, 1, 1])
 >>> sess.run(tf.shape(tf.squeeze(v)))
 array([2, 3], dtype=int32)
->>> sess.run(tf.shape(tf.squeeze(v,
->>> [2,4])))
+>>> sess.run(tf.shape(tf.squeeze(v, [2,4])))
 array([1, 2, 3, 1], dtype=int32)
 >>> sess.run(tf.shape(tf.squeeze(v,
 >>> [0,4])))
@@ -414,7 +413,29 @@ array([[1],
        [6],
        [7]])
 
-## tf.train.string_input_producer
+
+### tf.stack
+
+stack(values, axis=0, name='stack')
+
+>>> a = [1, 2]
+>>> b = [3, 4]
+>>> c = [5, 6]
+>>> tf.stack([a, b, c])
+<tf.Tensor 'stack:0' shape=(3, 2) dtype=int32>
+>>> sess.run(tf.stack([a, b, c]))
+array([[1, 2],
+       [3, 4],
+       [5, 6]], dtype=int32)
+>>> sess.run(tf.stack([a, b, c], axis = 1))
+array([[1, 3, 5],
+       [2, 4, 6]], dtype=int32)
+
+### tf.greater
+
+### 
+
+### tf.train.string_input_producer
 
 string_input_producer(string_tensor, num_epochs=None, shuffle=True, seed=None, capacity=32, shared_name=None, name=None, cancel_op=None)
 创建一个 FIFO 队列
@@ -626,8 +647,459 @@ tf.range(start, limit, delta) ==> [3, 2.5, 2, 1.5]
 # 'limit' is 5
 tf.range(limit) ==> [0, 1, 2, 3, 4]
 ```
+### tf.ones_like
 
-## TODO
+ones_like(tensor, dtype=None, name=None, optimize=True)
+
+将  tensor 元素都变为 1
+
+```python
+>>> sess.run(tf.ones_like(tf.convert_to_tensor([[1, 2, 3], [4, 5, 6]])))
+array([[1, 1, 1],
+       [1, 1, 1]], dtype=int32)
+
+>>> a = tf.convert_to_tensor([[False, True, False],[True, True, True]])
+>>> sess.run(tf.ones_like(a))
+array([[ True,  True,  True],
+       [ True,  True,  True]], dtype=bool)
+>>> a = tf.convert_to_tensor([[0, 2, 4],[-1, 2, 1]])
+>>> sess.run(tf.ones_like(a))
+array([[1, 1, 1],
+       [1, 1, 1]], dtype=int32)
+```
+### tf.metrics.mean
+
+mean(values, weights=None, metrics_collections=None, updates_collections=None, name=None)
+
+if weights is None:  return tf.reduce_sum(values) / tf.size(values)
+if weights is not None,  return tf.reduce_sum(values * weights) / tf.reduce_mean(weights)
+
+计算均值
+```python
+import tensorflow as tf
+
+feed_values = ((0, 1), (-4.2, 9.1), (6.5, 0), (-3.2, 4.0))
+values = tf.placeholder(dtype=tf.float32)
+weights = [[1,1], [1, 0], [0, 1], [0, 0]]
+
+mean, update_op = tf.metrics.mean(
+    values, weights,
+    metrics_collections=[my_collection_name],
+    updates_collections = my_collection_update)
+
+with tf.Session() as sess:
+  sess.run(tf.local_variables_initializer())
+  print(sess.run(update_op, feed_dict={values: feed_values}))
+  print("my_collection_name", sess.run(tf.get_collection(my_collection_name)))
+  print("my_collection_update", sess.run(tf.get_collection(my_collection_update)))
+  print(sess.run(mean))
+  print(sess.run(tf.constant(1)))
+```
+
+### tf.metrics.mean_tensor
+
+mean_tensor(values, weights=None, metrics_collections=None, updates_collections=None, name=None)
+
+计算均值，但是与 values 的 shape 是相同的
+```python
+import tensorflow as tf
+
+def _enqueue_vector(sess, queue, values, shape=None):
+  if not shape:
+    shape = (1, len(values))
+  dtype = queue.dtypes[0]
+  sess.run(
+      queue.enqueue(tf.constant(
+          values, dtype=dtype, shape=shape)))
+
+with tf.Session() as sess:
+  # Create the queue that populates the values.
+  values_queue = tf.FIFOQueue(
+      4, dtypes=tf.float32, shapes=(1, 2))
+  _enqueue_vector(sess, values_queue, [0, 1])
+  _enqueue_vector(sess, values_queue, [-4.2, 9.1])
+  _enqueue_vector(sess, values_queue, [6.5, 0])
+  _enqueue_vector(sess, values_queue, [-3.2, 4.0])
+  values = values_queue.dequeue()
+
+  # Create the queue that populates the weighted labels.
+  weights_queue = tf.FIFOQueue(
+      4, dtypes=tf.float32, shapes=(1, 2))
+  _enqueue_vector(sess, weights_queue, [1, 1])
+  _enqueue_vector(sess, weights_queue, [1, 0])
+  _enqueue_vector(sess, weights_queue, [0, 1])
+  _enqueue_vector(sess, weights_queue, [0, 0])
+  weights = weights_queue.dequeue()
+
+  mean, update_op = tf.metrics.mean_tensor(values, weights)
+
+  sess.run(tf.local_variables_initializer())
+  sess.run(tf.global_variables_initializer())
+  for _ in range(4):
+    print(sess.run(update_op))
+```
+结果
+[[ 0.  1.]]
+[[-2.0999999  1.       ]]
+[[-2.0999999  0.5      ]]
+[[-2.0999999  0.5      ]]
+
+```python
+>>> a, update_a = tf.metrics.mean_tensor(b)
+>>> sess.run(tf.local_variables_initializer())
+>>> sess.run(update_a)
+array([ 2.,  3.,  0.,  0.], dtype=float32)
+>>> sess.run(a)
+array([ 2.,  3.,  0.,  0.], dtype=float32)
+```
+
+
+### tf.random_uniform
+
+random_uniform(shape, minval=0, maxval=None, dtype=tf.float32, seed=None, name=None)
+
+>>> sess.run(tf.random_uniform((10, 3), maxval=3, dtype=tf.int64, seed=1))
+array([[2, 1, 0],
+       [2, 2, 1],
+       [2, 1, 1],
+       [1, 1, 1],
+       [1, 2, 2],
+       [2, 2, 2],
+       [2, 2, 2],
+       [1, 1, 2],
+       [1, 2, 1],
+       [0, 0, 1]])
+
+
+### tf.metrics.accuracy
+
+accuracy(labels, predictions, weights=None, metrics_collections=None, updates_collections=None, name=None)
+
+return tf.metrics.mean(tf.equal(labels, predictions), weights)
+
+```python
+import tensorflow as tf
+predictions = tf.random_uniform(
+    (10, 3), maxval=3, dtype=tf.int64, seed=1)
+labels = tf.random_uniform(
+    (10, 3), maxval=3, dtype=tf.int64, seed=2)
+accuracy, update_op = tf.metrics.accuracy(predictions, labels)
+
+with tf.Session() as sess:
+  sess.run(tf.local_variables_initializer())
+
+  # Run several updates.
+  for _ in range(10):
+    print("update_op", sess.run(update_op))
+
+  # Then verify idempotency.
+  for _ in range(10):
+    print("accuracy", sess.run(accuracy))
+```
+
+### tf.metrics.mean_absolute_error
+
+mean_absolute_error(labels, predictions, weights=None, metrics_collections=None, updates_collections=None, name=None)
+
+```python
+>>> a = [1, 2, 3, 4]
+>>> b = [2, 3, 4, 5]
+>>> op, update_op = tf.metrics.mean_absolute_error(a, b)
+>>> sess.run(tf.local_variables_initializer())   # 不可少
+>>> sess.run(update_op)
+1.0
+>>> sess.run(op)
+1.0
+```
+
+
+### tf.metrics.mean_squared_error
+
+mean_squared_error(labels, predictions, weights=None, metrics_collections=None, updates_collections=None, name=None)
+```python
+>>> op, update_op = tf.metrics.mean_squared_error(a, b)
+>>> sess.run(tf.local_variables_initializer())  # 不可少
+>>> sess.run(op)
+0.0
+>>> sess.run(update_op)
+1.0
+>>> sess.run(op)
+1.0
+```
+
+### tf.metrics.percentage_below
+
+percentage_below(values, threshold, weights=None, metrics_collections=None, updates_collections=None, name=None)
+
+
+
+### tf.metrics.true_positives
+
+true_positives(labels, predictions, weights=None, metrics_collections=None, updates_collections=None, name=None)
+
+labels 和  predictions 都为 True 的数量
+```python
+>>> a = [1, 0, 1, 0]
+>>> b = [1, 1, 1, 1]
+>>> op, update_op = tf.metrics.true_positives(a, b)
+>>> sess.run(tf.local_variables_initializer())
+>>> sess.run(op)
+0.0
+>>> sess.run(update_op)
+2.0
+>>> sess.run(op)
+2.0
+>>> w = [0, 0, 1, 0]
+>>> op, update_op = tf.metrics.true_positives(a, b, w)
+>>> sess.run(tf.local_variables_initializer())
+>>> sess.run(update_op)
+1.0
+>>> sess.run(op)
+1.0
+```
+同理
+tf.metrics.false_positives : label 为 False, predictions 为  True 的数量
+tf.metrics.false_negatives: label 为  True, predictions 为  False
+
+
+### tf.div tf.truediv
+
+truediv(x, y, name=None)
+div(x, y, name=None)
+
+```python
+>>> a = [1, 2, 3, 4]
+>>> b = [2, 3, 4, 5]
+>>> sess.run(tf.div(b,a))
+array([2, 1, 1, 1], dtype=int32)
+>>> sess.run(tf.truediv(b,a))
+array([ 2.        ,  1.5       ,  1.33333333,  1.25      ])
+```
+
+### tf.confusion_matrix
+
+confusion_matrix(labels, predictions, num_classes=None, dtype=tf.int32, name=None, weights=None)
+
+num_classes 如果为  None, 为  labels 中的最大值加 1 (labels 以 0 开始的分类问题)
+
+行：为 labels
+列: 为 predictions
+
+labels 与  predictions 的元素个数必须相同，且为一维向量
+```python
+tf.contrib.metrics.confusion_matrix([1, 2, 4], [2, 2, 4]) ==>
+    [[0 0 0 0 0]
+     [0 0 1 0 0]
+     [0 0 1 0 0]
+     [0 0 0 0 0]
+     [0 0 0 0 1]]
+    ```
+
+### tf.tile
+
+tile(input, multiples, name=None)
+
+将 input[i] 重复  multiples[i] 倍
+
+multiples  必须为整数，且元素个数必须与 input 的维度相同
+
+```python
+>>> c
+[[[1, 2], [3, 4]], [[4, 5], [5, 6]]]
+>>> sess.run(tf.tile(c, [2, 2, 3]))
+array([[[1, 2, 1, 2, 1, 2],
+        [3, 4, 3, 4, 3, 4],
+        [1, 2, 1, 2, 1, 2],
+        [3, 4, 3, 4, 3, 4]],
+
+       [[4, 5, 4, 5, 4, 5],
+        [5, 6, 5, 6, 5, 6],
+        [4, 5, 4, 5, 4, 5],
+        [5, 6, 5, 6, 5, 6]],
+
+       [[1, 2, 1, 2, 1, 2],
+        [3, 4, 3, 4, 3, 4],
+        [1, 2, 1, 2, 1, 2],
+        [3, 4, 3, 4, 3, 4]],
+
+       [[4, 5, 4, 5, 4, 5],
+        [5, 6, 5, 6, 5, 6],
+        [4, 5, 4, 5, 4, 5],
+        [5, 6, 5, 6, 5, 6]]], dtype=int32)
+```
+
+### tf.logical_and tf.logical_not
+
+### tf.Assert
+
+Assert(condition, data, summarize=None, name=None)
+
+如果 condition 为 False 会抛异常，并答应 data
+
+>>> a = [ 1., 2., 3., 4., 5., 6. ]
+>>> sess.run(tf.Assert(tf.less_equal(tf.reduce_max(a), 10.), [a])
+>>> sess.run(tf.Assert(tf.less_equal(tf.reduce_max(a), 1.), [a]))
+
+### tf.cond
+
+cond(*args, **kwargs)
+
+```python
+x = tf.constant(2)
+y = tf.constant(5)
+def f1(): return tf.multiply(x, 17)
+def f2(): return tf.add(y, 23)
+r = tf.cond(tf.less(x, y), f1, f2)
+```
+
+### tf.where
+
+where(condition, x=None, y=None, name=None)
+
+### tf.squared_difference
+
+squared_difference(x, y, name=None)
+
+ 返回  (x-y).^2
+
+>>> a = [1, 2, 4]
+>>> b = [4, 5, 6]
+>>> tf.squared_difference(a, b)
+<tf.Tensor 'SquaredDifference:0' shape=(3,) dtype=int32>
+>>> sess.run(tf.squared_difference(a, b))
+array([9, 9, 4], dtype=int32)
+
+
+### tf.gather
+
+gather(params, indices, validate_indices=None, name=None)
+
+剪切  params 的  indices 维度
+
+>>> a = [[1, 2, 3], [4, 5, 6]]
+>>> sess.run(tf.gather(a, 1))
+array([4, 5, 6], dtype=int32)
+>>> sess.run(tf.gather(a, 0))
+array([1, 2, 3], dtype=int32)
+>>> sess.run(tf.gather(a, [0, 1]))
+array([[1, 2, 3],
+       [4, 5, 6]], dtype=int32)
+
+>>> b = [[[1, 2, 3], [4, 5, 6]], [[1,1,1], [2,2,2]]]
+>>> sess.run(tf.gather(a, [[0], [1]]))
+array([[[1, 2, 3]],
+
+       [[4, 5, 6]]], dtype=int32)
+
+>>> print tf.gather(a, [[0], [1]]).get_shape()
+(2, 1, 3)
+>>> print tf.gather(a, [[0], [1]]).shape
+(2, 1, 3)
+
+
+### tf.reduce_prod
+
+reduce_prod(input_tensor, axis=None, keep_dims=False, name=None, reduction_indices=None)
+
+>>> c = [[[1, 2, 3]], [[4, 5, 6]]]
+>>> sess.run(tf.reduce_prod(c))
+720
+>>> sess.run(tf.reduce_prod(c, 0))
+array([[ 4, 10, 18]], dtype=int32)
+>>> sess.run(tf.reduce_prod(c, 1))
+array([[1, 2, 3],
+       [4, 5, 6]], dtype=int32)
+
+
+### tf.squared_difference
+
+squared_difference(x, y, name=None)
+
+return (x-y)^2
+
+
+### tf.one_host
+
+one_hot(indices, depth, on_value=None, off_value=None, axis=None, dtype=None, name=None)
+
+>>> a = [0, 1, 2, 2, 1, 0]
+>>> sess.run(tf.one_hot(a, 3, 1, 0, 0))
+array([[1, 0, 0, 0, 0, 1],
+       [0, 1, 0, 0, 1, 0],
+       [0, 0, 1, 1, 0, 0]], dtype=int32)
+>>> sess.run(tf.one_hot(a, 3, 1, 0, -1))
+array([[1, 0, 0],
+       [0, 1, 0],
+       [0, 0, 1],
+       [0, 0, 1],
+       [0, 1, 0],
+       [1, 0, 0]], dtype=int32)
+>>> a = [[0, 1, 2], [2, 1, 0]]
+>>> sess.run(tf.one_hot(a, 3, 1, 0, -1))
+array([[[1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]],
+
+       [[0, 0, 1],
+        [0, 1, 0],
+        [1, 0, 0]]], dtype=int32)
+>>> sess.run(tf.one_hot(a, 3, 1, 0, 0))
+array([[[1, 0, 0],
+        [0, 0, 1]],
+
+       [[0, 1, 0],
+        [0, 1, 0]],
+
+       [[0, 0, 1],
+        [1, 0, 0]]], dtype=int32)
+
+
+### tf.concat
+
+concat(values, axis, name='concat')
+
+>>> x = [[1, 2, 3], [4, 5, 6]]
+>>> y = [[3, 2, 1], [6, 5, 4]]
+>>> sess.run(tf.concat([x, y], 1))
+array([[1, 2, 3, 3, 2, 1],
+       [4, 5, 6, 6, 5, 4]], dtype=int32)
+>>> sess.run(tf.concat([x, y], 0))
+array([[1, 2, 3],
+       [4, 5, 6],
+       [3, 2, 1],
+       [6, 5, 4]], dtype=int32)
+
+
+
+### tf.test.is_gpu_available()
+
+如果只会 gpu 返回  True,
+如果不支持 gpu, 返回  False
+
+### tf.clip_by_value
+
+clip_by_value(t, clip_value_min, clip_value_max, name=None)
+
+将 t 的范围限定在 [clip_value_min, clip_value_max] 之间，
+小于 clip_value_min 的值取  clip_value_min，大于 clip_value_max
+的值取 clip_value_max
+
+### tf.map_fn
+
+map_fn(fn, elems, dtype=None, parallel_iterations=10, back_prop=True, swap_memory=False, infer_shape=True, name=None)
+
+
+>>> elems = np.array([1, 2, 3, 4, 5, 6])
+>>> square = lambda x: x * x
+>>> sess.run(tf.map_fn(square, elems))
+array([ 1,  4,  9, 16, 25, 36])
+
+>>> elems = np.array([1, 2, 3, 4, 5, 6])
+>>> alternate = lambda x: (-x, x)
+>>> sess.run(tf.map_fn(alternate, elems, dtype=(tf.int64, tf.int64)))
+(array([-1, -2, -3, -4, -5, -6]), array([1, 2, 3, 4, 5, 6]))
+
+# TODO
 
 tf.Coordinator
 tf.train.Saver
