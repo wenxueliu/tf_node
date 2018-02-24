@@ -224,7 +224,7 @@ message ConfigProto
   int32 placement_period = 3;
   repeated string device_filters = 4;
   GPUOptions gpu_options = 6;
-  bool allow_soft_placement = 7;
+  bool allow_soft_placement = 7;       //Soft placement allows placing on CPU ops without GPU implementation
   bool log_device_placement = 8;
   GraphOptions graph_options = 10;
   int64 operation_timeout_in_ms = 11;

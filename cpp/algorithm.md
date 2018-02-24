@@ -15,3 +15,8 @@ bool PruneForReverseReachability(Graph* g, std::unordered_set<const Node*> nodes
 bool FixupSourceAndSinkEdges(Graph* g);
 
 遍历 g 将 input 为空的  node 与 source node 建立 control edge, output 为空的  node 与 sink node 建立 control edge
+
+
+
+
+loss function https://en.wikipedia.org/wiki/Loss_function
