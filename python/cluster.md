@@ -1,16 +1,17 @@
 
 
+replicas : 使用多机训练时， 一台机器对应一个 replica ——复本
+worker : 功能类比于单机多卡中的GPU。
+job : 一个 job 中包含多个 task
+ps  : 参数服务器，多机训练时计算梯度平均值并执行backward操作的参数服务器，功能类比于单机多GPU（也叫单机多卡）时的CPU。（未考证， TODO）
+chief : 指 master
+tower：使用多GPU训练时， 一个GPU上对应一个tower。
+clone: 由于tensorflow里多GPU训练一般是每个GPU上都有完整的模型，各自forward，得到的梯度交给CPU平均然后统一backward，每个GPU上的模型也叫做一个clone。所以clone与tower指的是同一个东西。
 
-replicas
-worker
-job
-ps  : 参数服务器
-chief : 
 
 
 
-
-graph, Session, Server, job, task, cluster 之间的关系
+graph, Session, Server, job, task, cluster, clone, tower, ps, worker 之间的关系
 
 一个 cluster 下有多个 job，一个 job 只能属于一个 cluster
 一个 job 下有多个 task，一个 task 只能属于一个 job ?
@@ -19,7 +20,7 @@ graph, Session, Server, job, task, cluster 之间的关系
 
 
 ``` python
-    cluster_def = server_lib.ClusterSpec({
+    cluster_def = tf.train.ClusterSpec({
         "ps": ["ps0:2222", "ps1:2222"],
         "worker": ["worker0:2222", "worker1:2222", "worker2:2222"]
     }).as_cluster_def()
@@ -28,7 +29,9 @@ graph, Session, Server, job, task, cluster 之间的关系
         job_name="worker",
         task_index=2,
         protocol="grpc")
-    server = server_lib.Server(server_def, config=config, start=False)
+    server = tf.train.Server(server_def, protocol='grpc',
+        job_name='', task_index = 0,
+        config=config, start=False)
 ```
 
 
