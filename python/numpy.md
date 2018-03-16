@@ -6,6 +6,26 @@ axis
 0: 每列
 1: 每行
 
+快速构建一个矩阵
+
+np.arange(121 * 3).reshape([3,11,11])
+np.ones(121 * 3).reshape([3,11,11])
+
+## 初始化
+
+### np.full
+
+生成一个矩阵，并赋值默认值
+
+full(shape, fill_value, dtype=None, order='C')
+
+>>> np.full((2, 2), np.inf)
+array([[ inf,  inf],
+        [ inf,  inf]])
+>>> np.full((2, 2), 10)
+array([[10, 10],
+       [10, 10]])
+
 ### np.ones
 
 ones(shape, dtype=None, order='C')
@@ -26,7 +46,134 @@ array([[1, 1, 1],
 array([[1, 1, 1],
        [1, 1, 1]])
 
+### np.empty_like
+
+创建一个与已有某个矩阵一样 shape 的矩阵，并不初始化
+
+empty_like(a, dtype=None, order='K', subok=True)
+
+* ones_like
+* zeros_like
+
+>>> a = ([1,2,3], [4,5,6])
+>>> b = np.empty_like(a)
+>>> b
+array([[5764607523034234880, 5764607523034234880,          4473356328],
+       [         4472177928, 5764607523034234880, 5764607523034234880]])
+
+>>> b = np.ones_like(a)
+>>> b
+array([[1, 1, 1],
+       [1, 1, 1]])
+>>> b = np.zeros_like(a)
+>>> b
+array([[0, 0, 0],
+       [0, 0, 0]])
+
+
+>>> x = np.array([[1,2,3], [4,5,6], [7,8,9], [10, 11, 12]])
+>>> v = np.array([1, 0, 1])
+>>> y = np.empty_like(x)
+>>> for i in range(len(x)):
+...   y[i,:] = x[i,:] + v
+...
+>>> y
+array([[ 2,  2,  4],
+       [ 5,  5,  7],
+       [ 8,  8, 10],
+       [11, 11, 13]])
+
+### np.arange
+
+arange([start,] stop[, step,], dtype=None)
+
+生成指定范围的，左闭右开，经常与 reshape 用于快速创建矩阵
+
+When using a non-integer step, such as 0.1, the results will often not be consistent.  It is better to use ``linspace`` for these cases.
+
+>>> np.arange(3)
+array([0, 1, 2])
+>>> np.arange(3.0)
+array([ 0.,  1.,  2.])
+>>> np.arange(1.0, 3.0)
+array([ 1.,  2.])
+>>> np.arange(1.0, 3.0, 0.5)
+array([ 1. ,  1.5,  2. ,  2.5])
+>>> np.linspace(1.0, 3.0, 4)
+array([ 1.        ,  1.66666667,  2.33333333,  3.        ])
+>>> np.linspace(1.0, 4.0, 4)
+array([ 1.,  2.,  3.,  4.])
+
+np.arange(121 * 3).reshape([3,11,11])
+np.ones(121 * 3).reshape([3,11,11])
+
+### 类型转换
+
+astype
+
+### 行列切换
+
+>>> b = np.arange(12).reshape([2,2,3])
+>>> b
+array([[[ 0,  1,  2],
+        [ 3,  4,  5]],
+
+       [[ 6,  7,  8],
+        [ 9, 10, 11]]])
+>>> swap = (0,2,1)
+>>> b.transpose(swap)
+array([[[ 0,  3],
+        [ 1,  4],
+        [ 2,  5]],
+
+       [[ 6,  9],
+        [ 7, 10],
+        [ 8, 11]]])
+
+
+## 矩阵操作
+
+### broadcast
+
+>>> x = np.array([[1,2,3], [4,5,6], [7,8,9], [10, 11, 12]])
+>>> v = np.array([1, 0, 1])
+>>> y=x+v
+>>> y
+[[ 2  2  4]
+ [ 5  5  7]
+ [ 8  8 10]
+ [11 11 13]]
+
+Functions that support broadcasting are known as universal functions.
+
+
+### np.tile
+
+tile(A, reps)
+
+将 A 重复
+
+>>> np.tile(v, [4, 1])
+array([[1, 0, 1],
+       [1, 0, 1],
+       [1, 0, 1],
+       [1, 0, 1]])
+
+>>> np.repeat(v, 4, axis=0).reshape(3,4)
+array([[1, 1, 1, 1],
+       [0, 0, 0, 0],
+       [1, 1, 1, 1]])
+>>> np.repeat(v, 4, axis=0).reshape(3,4).T
+array([[1, 0, 1],
+       [1, 0, 1],
+       [1, 0, 1],
+       [1, 0, 1]])
+
 ### np.repeat
+
+repeat(a, repeats, axis=None)
+
+重复某个矩阵以某个维度重复 repeats
 
 >>> x = np.array([[1,2],[3,4]])
 >>> np.repeat(x, 2)
@@ -81,27 +228,6 @@ array([[1, 1, 1, 2, 2],
 >>> np.repeat(x, [3,3], axis=1)
 array([[1, 1, 1, 2, 2, 2],
        [3, 3, 3, 4, 4, 4]])
-
-### np.arange
-
-arange([start,] stop[, step,], dtype=None)
-
-生成指定范围的，左闭右开
-
-When using a non-integer step, such as 0.1, the results will often not be consistent.  It is better to use ``linspace`` for these cases.
-
->>> np.arange(3)
-array([0, 1, 2])
->>> np.arange(3.0)
-array([ 0.,  1.,  2.])
->>> np.arange(1.0, 3.0)
-array([ 1.,  2.])
->>> np.arange(1.0, 3.0, 0.5)
-array([ 1. ,  1.5,  2. ,  2.5])
->>> np.linspace(1.0, 3.0, 4)
-array([ 1.        ,  1.66666667,  2.33333333,  3.        ])
->>> np.linspace(1.0, 4.0, 4)
-array([ 1.,  2.,  3.,  4.])
 
 ### np.linspace
 
@@ -260,6 +386,42 @@ array([[1, 2],
        [2, 3],
        [3, 4]])
 
+#### np.hstack
+
+hstack(tup) 水平扩展
+
+>>> a = np.array((1,2,3))
+>>> b = np.array((2,3,4))
+>>> np.hstack((a,b))
+array([1, 2, 3, 2, 3, 4])
+>>> np.vstack((a,b))
+array([[1, 2, 3],
+       [2, 3, 4]])
+>>> a = np.array([[1],[2],[3]])
+>>> b = np.array([[2],[3],[4]])
+>>> np.hstack((a,b))
+array([[1, 2],
+       [2, 3],
+       [3, 4]])
+>>> np.vstack((a,b))
+array([[1],
+       [2],
+       [3],
+       [2],
+       [3],
+       [4]])
+
+### np.random.permutation
+
+permutation(...)
+
+生成随机序列
+
+>>> np.random.permutation(np.arange(10))
+array([2, 0, 1, 3, 4, 8, 5, 9, 7, 6])
+>>> np.random.permutation(10)
+array([7, 5, 6, 9, 3, 8, 1, 4, 0, 2])
+
 ### np.random.choice
 
 choice(a, size=None, replace=True, p=None)
@@ -303,7 +465,114 @@ array([[1, 4],
 >>> np.c_[np.array([[1,2,3]]), 0, 0, np.array([[4,5,6]])]
 array([[1, 2, 3, 0, 0, 4, 5, 6]])
 
+## 矩阵操作
+
+### 矩阵切片(slice)
+
+指定范围与不指定范围的区别
+
+>>> a = np.array([[1,2,3,4], [5,6,7,8], [9,10,11,12]])
+>>> row_r1 = a[1, :]
+>>> row_r2 = a[1:2, :]
+>>> print(row_r1, row_r1.shape)
+(array([5, 6, 7, 8]), (4,))
+>>> print(row_r2, row_r2.shape)
+(array([[5, 6, 7, 8]]), (1, 4))
+
+索引为数组
+
+>>> a = np.array([[1,2], [3, 4], [5, 6]])
+>>> print(a[[0, 1, 2], [0, 1, 0]])
+[1 4 5]
+>>> print(np.array([a[0, 0], a[1, 1], a[2, 0]]))
+[1 4 5]
+
+>>> a = np.array([[1,2,3], [4,5,6], [7,8,9], [10, 11, 12]])
+>>> b = np.array([0, 2, 0, 1])
+>>> print(a[np.arange(4), b])
+[ 1  6  7 11]
+>>> a[np.arange(4), b] += 10
+>>> print(a)
+[[11  2  3]
+ [ 4  5 16]
+ [17  8  9]
+ [10 21 12]]
+
+### 矩阵条件判断
+
+>>> a = np.array([[1,2], [3, 4], [5, 6]])
+>>> bool_idx = (a > 2)
+>>> print(bool_idx)
+[[False False]
+ [ True  True]
+ [ True  True]]
+ >>> print(a[bool_idx])
+[3 4 5 6]
+>>> print(a[a > 2])
+[3 4 5 6]
+
+### Elementwise product vs Inner product
+
+>>> x = np.array([[1,2],[3,4]])
+>>> y = np.array([[5,6],[7,8]])
+>>> print(x.dot(y))
+[[19 22]
+ [43 50]]
+>>> print(np.multiply(x,y))
+[[ 5 12]
+ [21 32]]
+>>> print(np.dot(x,y))
+[[19 22]
+ [43 50]]
+>>> print(x*y)
+[[ 5 12]
+ [21 32]]
+
 ### np.np.meshgrid
+
+meshgrid(*xi, **kwargs)
+
+x, y = msehgrid(a, b)
+其中  x  为 a 的每个元素用 b' 的数组表示，
+其中  y  为 b 的每个元素用 a 的数组表示，
+
+
+>>> b
+[1, 2, 3]
+>>> a
+[1, 2]
+>>> x, y = np.meshgrid(a, b)
+>>> x
+array([[1, 2],
+       [1, 2],
+       [1, 2]])
+>>> y
+array([[1, 1],
+       [2, 2],
+       [3, 3]])
+>>> x, y = np.meshgrid(b, a)
+>>> x
+array([[1, 2, 3],
+       [1, 2, 3]])
+>>> y
+array([[1, 1, 1],
+       [2, 2, 2]])
+
+>>> b = [[1, 2, 3], [4, 5, 6]]
+>>> np.meshgrid(a, b)
+[array([[0, 1],
+       [0, 1],
+       [0, 1],
+       [0, 1],
+       [0, 1],
+       [0, 1]]), array([[1, 1],
+       [2, 2],
+       [3, 3],
+       [4, 4],
+       [5, 5],
+       [6, 6]])]
+
+
 
 >>> nx, ny = (3, 2)
 >>> x = np.linspace(0, 1, nx)
