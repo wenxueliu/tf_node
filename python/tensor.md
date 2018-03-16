@@ -431,6 +431,16 @@ array([[1, 2],
 array([[1, 3, 5],
        [2, 4, 6]], dtype=int32)
 
+### tf.unstack
+
+unstack(value, num=None, axis=0, name='unstack')
+
+>>> a = [1, 2, 3]
+>>> x, y, z = tf.unstack(a)
+>>> sess.run([x, y, z])
+[1, 2, 3]
+
+
 ### tf.greater
 
 ### 
