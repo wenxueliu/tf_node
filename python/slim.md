@@ -128,22 +128,55 @@ init_fn = assign_from_checkpoint_fn(model_path, variables_to_restore)
 
 # Start training.
 slim.learning.train(train_op, log_dir, init_fn=init_fn)
-
+```
 
 
 ### 源码分析
+
+### reader
+
+def parallel_read(data_sources,
+                  reader_class,
+                  num_epochs=None,
+                  num_readers=4,
+                  reader_kwargs=None,
+                  shuffle=True,
+                  dtypes=None,
+                  capacity=256,
+                  min_after_dequeue=128,
+                  seed=None,
+                  scope=None)
+1. 创建队列，如果 shuffle 为  True 为 RandomShuffleQueue, 否则为 FIFOQueue
+2. 创建 num_readers 个 reader_class 实例
+3. 调用每个 reader_class  实例的  read  方法，读取的数据加入队列
+4. 运行 num_readers 个线程(从 data_sources 读数据，加入队列)
+5. 从队列中取数据，返回
+
+// tfexample_decoder.py
+
+class Image(ItemHandler)  根据 image_format 从 image_buff 解码 image，
+
+class Tensor(ItemHandler)
+
+class BoundingBox(ItemHandler)
+
+class ItemHandlerCallback(ItemHandler)
+
 
 ### learning
 
 def clip_gradient_norms(gradients_to_variables, max_norm)
 
-对  gradients_to_variables 中的每个变量计算  clip_by_norm，之后返回计算后的 list
+对 gradients_to_variables 中的每个变量 var，
+
+var * max_norm * min(1/max_norm, rsqrt(reduce_sum(var * var))
+
+之后返回计算后的 var 列表
 
 
 def multiply_gradients(grads_and_vars, gradient_multipliers)
 
-遍历 grads_and_vars(grad, var), 如果其中的 var 存在于 gradient_multipliers 中，
-   grad *= gradient_multipliers[var]
+遍历 grads_and_vars(grad, var), 如果其中的 var 存在于 gradient_multipliers 中， grad *= gradient_multipliers[var]
 
 def add_gradients_summaries(grads_and_vars)
 
@@ -195,6 +228,8 @@ def train(train_op,
           sync_optimizer=None,
           session_config=None,
           trace_every_n_steps=None)
+
+sync_optimizer 不为 None 时，startup_delay_steps 必须为 0
 
 1. 参数校验
 2. 如果 global_step 没有初始化，初始化之
