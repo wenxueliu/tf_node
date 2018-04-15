@@ -1,8 +1,4 @@
 
-
-
-broadcasting 如何理解?
-
 ## 创建常量的几种方式
 
 ### 方式一
@@ -24,6 +20,47 @@ tf.Variable(a)
 tf.get_variable
 
 >>> a = tf.constant(np.arange(6).reshape(2,3))
+
+### 矩阵操作
+
+#### 矩阵拆合
+
+* tf.split 将一个矩阵按照列进行分割
+* tf.stack 将多个矩阵组合成一个矩阵
+* tf.unstack 将一个矩阵按照某一维度展开为子矩阵
+* tf.concat :
+* tf.slice
+* tf.tile
+
+tf.stack 与  tf.concat 有什么区别
+
+#### 矩阵求和
+
+* tf.reduce_mean : 将矩阵按照某一维度求和
+* tf.reduce_max : 将矩阵按照某一维度求最大值
+* tf.minimum
+* tf.maximum
+* tf.argmax : 计算某一维度的最大值的索引
+
+#### 矩阵逻辑操作
+
+返回 True, False 矩阵
+
+* tf.reduce_any
+* tf.logical_and
+
+#### 矩阵比较
+
+返回 True, False 矩阵
+
+* tf.greater
+* tf.less
+* tf.greater_equal
+* tf.equal
+
+#### 矩阵集合
+
+
 
 ## tf.placeholder
 
@@ -74,6 +111,16 @@ constant(value, dtype=None, shape=None, name='Const', verify_shape=False)
 tensor = tf.constant([1, 2, 3, 4, 5, 6, 7])
 tensor = tf.constant(-1.0, shape=[2, 3])
 
+### tf.cast
+
+cast(x, dtype, name=None)
+
+>>> a = tf.constant([0.9, 2.5, 2.3, 1.5, -4.5])
+>>> sess = tf.Session()
+>>> sess.run(tf.cast(a, tf.int32))
+array([ 0,  2,  2,  1, -4], dtype=int32)
+
+
 ### tf.random_normal
 
 random_normal(shape, mean=0.0, stddev=1.0, dtype=tf.float32, seed=None, name=None)
@@ -83,6 +130,9 @@ random_normal(shape, mean=0.0, stddev=1.0, dtype=tf.float32, seed=None, name=Non
 ### tf.squeeze
 
 squeeze(input, axis=None, name=None, squeeze_dims=None)
+
+如果 axis 没有指定，就将所有维度只有 1 个元素的维度删除，
+如果 axis 指定了， 如果指定的维度只有一个元素就删除该维
 
 >>> v = tf.constant(1.0, shape=[1, 2, 1, 3, 1, 1])
 >>> sess.run(tf.shape(tf.squeeze(v)))
@@ -105,6 +155,46 @@ square(x, name=None)
 >>> sess = tf.Session()
 >>> sess.run(vv)
 array([ 1,  4,  9, 16, 25, 36, 49], dtype=int32)
+
+### tf.reduce_any
+
+reduce_any(input_tensor, axis=None, keep_dims=False, name=None, reduction_indices=None)
+
+对 input_tensor 的第 axis 就算逻辑或
+
+    ```python
+    # 'x' is [[True,  True]
+    #         [False, False]]
+    tf.reduce_any(x) ==> True
+    tf.reduce_any(x, 0) ==> [True, True]
+    tf.reduce_any(x, 1) ==> [True, False]
+    ```
+
+### tf.argmax
+
+argmax(input, axis=None, name=None, dimension=None)
+
+>>> sess.run(x)
+array([[ 0,  1,  2,  3],
+       [ 4,  5,  6,  7],
+       [ 8,  9, 10, 11],
+       [12, 13, 14, 15],
+       [16, 17, 18, 19]], dtype=int32)
+>>> sess.run(tf.argmax(x, 1))
+array([3, 3, 3, 3, 3])
+>>> sess.run(tf.argmax(x, 0))
+array([4, 4, 4, 4])
+
+### tf.reduce_max
+
+reduce_max(input_tensor, axis=None, keep_dims=False, name=None, reduction_indices=None)
+
+>>> a = [[1, 3, 4, 0, 0], [2, 4, 5, 0, 0]]
+>>> sess.run(tf.reduce_max(a, axis=0))
+array([2, 4, 5, 0, 0], dtype=int32)
+>>> sess.run(tf.reduce_max(a, axis=1))
+array([4, 5], dtype=int32)
+
 
 ### tf.reduce_mean
 
@@ -227,18 +317,21 @@ round(x, name=None)
 >>> sess.run(tf.round(a))
 array([ 1.,  2.,  2.,  2., -4.], dtype=float32)
 
-### tf.cast
-
-cast(x, dtype, name=None)
-
->>> a = tf.constant([0.9, 2.5, 2.3, 1.5, -4.5])
->>> sess = tf.Session()
->>> sess.run(tf.cast(a, tf.int32))
-array([ 0,  2,  2,  1, -4], dtype=int32)
-
 ### tf.equal
 
 equal(x, y, name=None)
+
+
+### tf.boolean_mask
+
+boolean_mask(tensor, mask, name='boolean_mask')
+
+    ```python
+    # 1-D example
+    tensor = [0, 1, 2, 3]
+    mask = np.array([True, False, True, False])
+    boolean_mask(tensor, mask) ==> [0, 2]
+    ```
 
 ### tf.nn.sigmoid_cross_entropy_with_logits
 
@@ -310,9 +403,9 @@ parallel_stack(values, name='parallel_stack')
 
 ### tf.slice
 
-可以从两方面理解
+slice(input_, begin, size, name=None)
 
-
+第一个表示开始坐标，第二个元素表示在各个维度取的数量
 
 >>> x = tf.constant([[11,12,13,14], [21,22,23,24], [31,32,33,4], [41,42,43,44]])
 >>> t = tf.convert_to_tensor(x)
@@ -322,8 +415,9 @@ array([[22, 23],
        [32, 33],
        [42, 43]], dtype=int32)
 
->>> z=tf.constant([[[1,2,3],[4,5,6]], [[7,8,9],[10,11,12]],
->>> [[13,14,15],[16,17,18]]])
+这里 [1, 1] 表示从坐标索引 [1,1] 开始，取 3 行，2 列
+
+>>> z=tf.constant([[[1,2,3],[4,5,6]], [[7,8,9],[10,11,12]], [[13,14,15],[16,17,18]]])
 >>> begin_z=[0,1,1]
 >>> size_z=[-1,1,2]
 >>> out=tf.slice(z,begin_z,size_z)
@@ -413,6 +507,43 @@ array([[1],
        [6],
        [7]])
 
+### tf.split
+
+split(value, num_or_size_splits, axis=0, num=None, name='split')
+
+num_or_size_splits 支持数字和列表，如果是数字，就将 value 的第  axis 维
+均分成 num_or_size_splits 部分；如果是列表，就将 value 的第  axis 依次
+分成数组指定的每个元素的部分，下面的例子最能说明问题
+
+    ```python
+    # 'value' is a tensor with shape [5, 30]
+    # Split 'value' into 3 tensors with sizes [4, 15, 11] along dimension 1
+    split0, split1, split2 = tf.split(value, [4, 15, 11], 1)
+    tf.shape(split0) ==> [5, 4]
+    tf.shape(split1) ==> [5, 15]
+    tf.shape(split2) ==> [5, 11]
+    # Split 'value' into 3 tensors along dimension 1
+    split0, split1, split2 = tf.split(value, num_or_size_splits=3, axis=1)
+    tf.shape(split0) ==> [5, 10]
+    ```
+
+### tf.concat
+
+concat(values, axis, name='concat')
+
+axis = 0: 列的数量不变，行叠加
+axis = 1: 行的数量不变，行叠加
+
+>>> x = [[1, 2, 3], [4, 5, 6]]
+>>> y = [[3, 2, 1], [6, 5, 4]]
+>>> sess.run(tf.concat([x, y], 1))
+array([[1, 2, 3, 3, 2, 1],
+       [4, 5, 6, 6, 5, 4]], dtype=int32)
+>>> sess.run(tf.concat([x, y], 0))
+array([[1, 2, 3],
+       [4, 5, 6],
+       [3, 2, 1],
+       [6, 5, 4]], dtype=int32)
 
 ### tf.stack
 
@@ -440,10 +571,17 @@ unstack(value, num=None, axis=0, name='unstack')
 >>> sess.run([x, y, z])
 [1, 2, 3]
 
+>>> a = [[1, 3, 4, 0, 0], [2, 4, 5, 0, 0]]
+>>> sess.run(tf.unstack(a))
+[array([1, 3, 4, 0, 0], dtype=int32), array([2, 4, 5, 0, 0], dtype=int32)]
 
-### tf.greater
+### 条件判断
 
-### 
+* tf.greater
+
+返回 bool 矩阵或向量
+
+###
 
 ### tf.train.string_input_producer
 
@@ -465,6 +603,62 @@ max_pool(value, ksize, strides, padding, data_format='NHWC', name=None)
 ## tf.nn.dropout
 
 dropout(x, keep_prob, noise_shape=None, seed=None, name=None)
+
+```python
+#!/usr/bin/env python
+# encoding: utf-8
+
+import tensorflow as tf
+import numpy as np
+
+
+def main():
+
+    with tf.Graph().as_default():
+        import numpy as np
+        input_x = np.ones([3, 4])
+        print input_x
+
+        keep_prob_list = [0.1, 0.5, 0.8, 1.0]
+        drop = []
+        for i, keep_prob in enumerate(keep_prob_list):
+            drop.append(tf.nn.dropout(x=input_x, keep_prob=keep_prob))
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            for i, drop_i in enumerate(drop):
+                _drop_i = sess.run(drop_i)
+                print '\n----' + str(keep_prob_list[i]) + '------\n'
+                print _drop_i
+
+if __name__ == "__main__":
+    main()
+```
+多次运行，结果非常有意思
+
+
+## tf.contrib.layers.full
+
+>>> input_x = np.ones([3, 4])
+>>> fn = tf.contrib.layers.fully_connected(inputs=input_x, num_outputs=1)
+>>> sess.run(tf.global_variables_initializer())
+>>> print(input_x)
+[[ 1.  1.  1.  1.]
+ [ 1.  1.  1.  1.]
+ [ 1.  1.  1.  1.]]
+>>> print(sess.run(fn))
+[[ 2.07639697]
+ [ 2.07639697]
+ [ 2.07639697]]
+
+#### tf.nn.softmax
+
+>>> input_x = np.ones([3, 4])
+>>> fn = tf.contrib.layers.fully_connected(inputs=input_x, num_outputs=1)
+>>> sess.run(tf.global_variables_initializer())
+>>> print(sess.run(tf.nn.softmax(input_x)))
+[[ 0.25  0.25  0.25  0.25]
+ [ 0.25  0.25  0.25  0.25]
+ [ 0.25  0.25  0.25  0.25]]
 
 ## tf.nn.bias_add
 
@@ -521,6 +715,31 @@ control_dependencies(control_inputs)
 
 只有 control_inputs 中的 Operation 或 Tensor
 执行或计算之后，才能继续执行当前上下文的内容
+
+### tf.cumsum
+
+cumsum(x, axis=0, exclusive=False, reverse=False, name=None)
+
+
+>>> b = [4, 5, 6]
+>>> sess.run(tf.cumsum(b))
+array([ 4,  9, 15], dtype=int32)
+
+>>> a = tf.reshape(tf.range(15), (3,5))
+>>> sess.run(a)
+array([[ 0,  1,  2,  3,  4],
+       [ 5,  6,  7,  8,  9],
+       [10, 11, 12, 13, 14]], dtype=int32)
+>>> sess.run(tf.cumsum(a, 1))
+array([[ 0,  1,  3,  6, 10],
+       [ 5, 11, 18, 26, 35],
+       [10, 21, 33, 46, 60]], dtype=int32)
+>>> sess.run(tf.cumsum(a))
+array([[ 0,  1,  2,  3,  4],
+       [ 5,  7,  9, 11, 13],
+       [15, 18, 21, 24, 27]], dtype=int32)
+
+tf.cumsum([a, b, c]) ==> [a, a + b, a + b + c]
 
 ## tf.reduce_sum
 
@@ -581,6 +800,10 @@ Python scalars
 ```
 
 ## tf.pad
+
+pad(tensor, paddings, mode='CONSTANT', name=None)
+
+paddings[i] 的第 i 个元素表示在第 n 为的前面和后面分别增加几行 0
 ```python
 >>> a = tf.convert_to_tensor([[1,2,3], [4, 5, 6]])
 >>> sess
@@ -909,10 +1132,9 @@ tf.contrib.metrics.confusion_matrix([1, 2, 4], [2, 2, 4]) ==>
 
 tile(input, multiples, name=None)
 
-将 input[i] 重复  multiples[i] 倍
+将 input 的维度 i 重复 multiples[i] 倍
 
-multiples  必须为整数，且元素个数必须与 input 的维度相同
-
+multiples 必须为整数，且元素个数必须与 input 的维度相同
 ```python
 >>> c
 [[[1, 2], [3, 4]], [[4, 5], [5, 6]]]
@@ -966,6 +1188,8 @@ r = tf.cond(tf.less(x, y), f1, f2)
 
 where(condition, x=None, y=None, name=None)
 
+返回 x 中匹配条件的索引
+
 ### tf.squared_difference
 
 squared_difference(x, y, name=None)
@@ -984,7 +1208,7 @@ array([9, 9, 4], dtype=int32)
 
 gather(params, indices, validate_indices=None, name=None)
 
-剪切  params 的  indices 维度
+剪切  params 的 indices 维度
 
 >>> a = [[1, 2, 3], [4, 5, 6]]
 >>> sess.run(tf.gather(a, 1))
@@ -1028,7 +1252,7 @@ squared_difference(x, y, name=None)
 return (x-y)^2
 
 
-### tf.one_host
+### tf.one_hot
 
 one_hot(indices, depth, on_value=None, off_value=None, axis=None, dtype=None, name=None)
 
@@ -1063,21 +1287,53 @@ array([[[1, 0, 0],
        [[0, 0, 1],
         [1, 0, 0]]], dtype=int32)
 
+#### tf.setdiff1d
 
-### tf.concat
+setdiff1d(x, y, index_dtype=tf.int32, name=None)
 
-concat(values, axis, name='concat')
+返回在 x 不在 y 的元素及其在 x 中的索引
 
->>> x = [[1, 2, 3], [4, 5, 6]]
->>> y = [[3, 2, 1], [6, 5, 4]]
->>> sess.run(tf.concat([x, y], 1))
-array([[1, 2, 3, 3, 2, 1],
-       [4, 5, 6, 6, 5, 4]], dtype=int32)
->>> sess.run(tf.concat([x, y], 0))
-array([[1, 2, 3],
-       [4, 5, 6],
-       [3, 2, 1],
-       [6, 5, 4]], dtype=int32)
+>>> x = [1, 2, 3, 4, 5, 6]
+>>> y = [1, 3, 5]
+>>> sess.run(tf.setdiff1d(x, y))
+ListDiff(out=array([2, 4, 6], dtype=int32), idx=array([1, 3, 5], dtype=int32))
+
+
+#### tf.dynamic_stitch
+
+
+dynamic_stitch(indices, data, name=None)
+
+其中 indices 保存的是 合并后的索引，data 与是 indices 索引相同的对应的值
+
+    ```python
+        # Apply function (increments x_i) on elements for which a certain condition
+        # apply (x_i != -1 in this example).
+        x=tf.constant([0.1, -1., 5.2, 4.3, -1., 7.4])
+        condition_mask=tf.not_equal(x,tf.constant(-1.))
+        partitioned_data = tf.dynamic_partition(
+            x, tf.cast(condition_mask, tf.int32) , 2)
+        partitioned_data[1] = partitioned_data[1] + 1.0
+        condition_indices = tf.dynamic_partition(
+            tf.range(tf.shape(x)[0]), tf.cast(condition_mask, tf.int32) , 2)
+        x = tf.dynamic_stitch(condition_indices, partitioned_data)
+        # Here x=[1.1, -1., 6.2, 5.3, -1, 8.4], the -1. values remain
+        # unchanged.
+    ```
+
+    ```python
+    indices[0] = 6
+    indices[1] = [4, 1]
+    indices[2] = [[5, 2], [0, 3]]
+    data[0] = [61, 62]
+    data[1] = [[41, 42], [11, 12]]
+    data[2] = [[[51, 52], [21, 22]], [[1, 2], [31, 32]]]
+    merged = [[1, 2], [11, 12], [21, 22], [31, 32], [41, 42],
+              [51, 52], [61, 62]]
+    ```
+合并之后的 merge[6] = [61,62], merge[4] = [41, 42] merge[1] = [11,12]
+
+
 
 
 
@@ -1109,6 +1365,28 @@ array([ 1,  4,  9, 16, 25, 36])
 >>> sess.run(tf.map_fn(alternate, elems, dtype=(tf.int64, tf.int64)))
 (array([-1, -2, -3, -4, -5, -6]), array([1, 2, 3, 4, 5, 6]))
 
+#### 打印内存变量
+
+```python
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    for name, value in zip(tf.global_variables(), sess.run(tf.global_variables())):
+        print name, ': \n', value, '\n'
+```
+
+比如
+
+```python
+print 'my/BatchNorm/beta:0', (sess.run('my/BatchNorm/beta:0'))
+```
+#### tf.py_func
+
+inputs = 1.
+my_func = lambda x : np.sinh(x)
+y = tf.py_func(my_func, [inputs], tf.float32)
+
+
 # TODO
 
 tf.Coordinator
@@ -1118,4 +1396,117 @@ tf.image.resize_image_with_crop_or_pad
 tf.random_crop
 
 
+## tips
 
+reshape(-1) : 将一个多维矩阵转为一维向量
+
+
+
+附录
+
+```
+>>> a = tf.reshape(tf.range(5), (5,1))
+>>> b = tf.reshape(tf.range(5, 10), (5,1))
+>>> c = tf.cast(tf.ones((5, 1)), tf.int32)
+>>> d = tf.cast(tf.zeros((5, 1)), tf.int32)
+>>> sess.run(tf.concat([a, b, c, d], 1))
+array([[0, 5, 1, 0],
+       [1, 6, 1, 0],
+       [2, 7, 1, 0],
+       [3, 8, 1, 0],
+       [4, 9, 1, 0]], dtype=int32)
+>>> sess.run(tf.concat([a, b, c, d], 0))
+array([[0],
+       [1],
+       [2],
+       [3],
+       [4],
+       [5],
+       [6],
+       [7],
+       [8],
+       [9],
+       [1],
+       [1],
+       [1],
+       [1],
+       [1],
+       [0],
+       [0],
+       [0],
+       [0],
+       [0]], dtype=int32)
+>>> sess.run(tf.stack([a, b, c, d], 0))
+array([[[0],
+        [1],
+        [2],
+        [3],
+        [4]],
+
+       [[5],
+        [6],
+        [7],
+        [8],
+        [9]],
+
+       [[1],
+        [1],
+        [1],
+        [1],
+        [1]],
+
+       [[0],
+        [0],
+        [0],
+        [0],
+        [0]]], dtype=int32)
+>>> sess.run(tf.stack([a, b, c, d], 1))
+array([[[0],
+        [5],
+        [1],
+        [0]],
+
+       [[1],
+        [6],
+        [1],
+        [0]],
+
+       [[2],
+        [7],
+        [1],
+        [0]],
+
+       [[3],
+        [8],
+        [1],
+        [0]],
+
+       [[4],
+        [9],
+        [1],
+        [0]]], dtype=int32)
+>>> sess.run(tf.stack([a, b, c, d]))
+array([[[0],
+        [1],
+        [2],
+        [3],
+        [4]],
+
+       [[5],
+        [6],
+        [7],
+        [8],
+        [9]],
+
+       [[1],
+        [1],
+        [1],
+        [1],
+        [1]],
+
+       [[0],
+        [0],
+        [0],
+        [0],
+        [0]]], dtype=int32)
+```
