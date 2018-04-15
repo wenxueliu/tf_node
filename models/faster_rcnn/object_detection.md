@@ -446,16 +446,17 @@ builders/box_predictor_builder.py
 * mask_rcnn_box_predictor
 * rfcn_box_predictor
 
+RfcnBoxPredictor
+MaskRCNNBoxPredictor
+ConvolutionalBoxPredictor
+
+
 ### second_stage_post_processing
 
 builders/post_processing_builder.py
+proto/post_processing.proto
 
 
-1. FASTER_RCNN_FEATURE_EXTRACTOR_CLASS_MAP[frcnn_config.feature_extractor.type] 中的某个值
-2. grid_anchor_generator.GridAnchorGenerator 或 multiple_grid_anchor_generator.create_ssd_anchors
-3. box_predictor_builder.build TODO
-4. post_processing_builder.build
-5. rfcn_meta_arch.RFCNMetaArch 或 faster_rcnn_meta_arch.FasterRCNNMetaArch
+BatchNonMaxSuppression
 
-
-
+ScoreConverter 支持 IDENTITY(默认),SIGMOID,SOFTMAX

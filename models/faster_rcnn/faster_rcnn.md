@@ -11,14 +11,15 @@
 
 ## Anchor
 
-### AnchorGenerator
+参考 anchor.md
 
-定义了生成 Anchor 的一般分方法
+## boxCoder
 
-* name_scope
-* num_anchors_per_location
-* \_generate
+## Feature Map
 
+### NAS
+
+FasterRCNNNASFeatureExtractor
 
 #### Tips
 
@@ -28,8 +29,3 @@
     x = x.reshape(-1)
     y = y.reshape(-1)
 
-## Feature Map
-
-### NAS
-
-FasterRCNNNASFeatureExtractor
