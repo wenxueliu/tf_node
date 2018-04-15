@@ -1,11 +1,11 @@
 
 
 replicas : 使用多机训练时， 一台机器对应一个 replica ——复本
-worker : 功能类比于单机多卡中的GPU。
+worker :  一个运行训练的进程。
 job : 一个 job 中包含多个 task
 ps  : 参数服务器，多机训练时计算梯度平均值并执行backward操作的参数服务器，功能类比于单机多GPU（也叫单机多卡）时的CPU。（未考证， TODO）
-chief : 指 master
-tower：使用多GPU训练时， 一个GPU上对应一个tower。
+chief : worker_id 为 0  的 worker，负责初始化参数，写 summary 和 checkpoint
+tower：使用多 GPU 训练时， 一个 GPU 对应一个tower。
 clone: 由于tensorflow里多GPU训练一般是每个GPU上都有完整的模型，各自forward，得到的梯度交给CPU平均然后统一backward，每个GPU上的模型也叫做一个clone。所以clone与tower指的是同一个东西。
 
 
@@ -17,6 +17,48 @@ graph, Session, Server, job, task, cluster, clone, tower, ps, worker 之间的�
 一个 job 下有多个 task，一个 task 只能属于一个 job ?
 一个 task 对应一个 Server, 一个 server 只能属于一个 task
 一个 Server 可以运行多个 Session， 一个 Session 对一个 Server
+
+
+```shell
+# To start worker 0, go to the worker0 host and run the following (Note that
+# task_id should be in the range [0, num_worker_tasks):
+bazel-bin/inception/imagenet_distributed_train \
+--batch_size=32 \
+--data_dir=$HOME/imagenet-data \
+--job_name='worker' \
+--task_id=0 \
+--ps_hosts='ps0.example.com:2222' \
+--worker_hosts='worker0.example.com:2222,worker1.example.com:2222'
+
+# To start worker 1, go to the worker1 host and run the following (Note that
+# task_id should be in the range [0, num_worker_tasks):
+bazel-bin/inception/imagenet_distributed_train \
+--batch_size=32 \
+--data_dir=$HOME/imagenet-data \
+--job_name='worker' \
+--task_id=1 \
+--ps_hosts='ps0.example.com:2222' \
+--worker_hosts='worker0.example.com:2222,worker1.example.com:2222'
+
+# To start the parameter server (ps), go to the ps host and run the following
+(Note
+# that task_id should be in the range [0, num_ps_tasks):
+CUDA_VISIBLE_DEVICES='' bazel-bin/inception/imagenet_distributed_train \
+--job_name='ps' \
+--task_id=0 \
+--ps_hosts='ps0.example.com:2222' \
+--worker_hosts='worker0.example.com:2222,worker1.example.com:2222'])])])
+```
+
+
+
+
+
+
+
+
+
+
 
 
 ``` python
