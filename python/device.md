@@ -3,10 +3,10 @@
 优先级比 CPU 优先级高，即如果你的机器有 GPU，就在 GPU 上运行，如果
 没有 GPU 才在 CPU 上运行。 这个完全就 tensorflow 自动帮你实现。
 
-你有多个 GPU，如何将多个操作在多个 GPU 上合理分配，
-就需要自己手动设置哪些操作在 GPU 上运行，哪些操作在其他 GPU 上
-运行，当然，有时候，即使你有 GPU，你也希望它在 CPU 上执行（这
-主要用于测试）。
+你有多个 GPU，如何将多个操作在多个 GPU 上合理分配，TensorFlow 默认
+根据贪婪算法来分配，当然可以根据自己的需要手动设置哪些操作在 GPU 上
+运行，哪些操作在其他 GPU 上运行，当然，有时候，即使你有 GPU，你也希
+望它在 CPU 上执行（这主要用于测试）。
 
 
 
@@ -98,6 +98,8 @@ config.allow_soft_placement = True
 ### 如何合理分配各个操作在设备上运行
 
 TODO
+这是一个难点，目前 TensorFlow 的 paper 中也提到。是
+一个非常具有挑战的事情。
 
 ### 查看运行时，operation 和  tensor 分配到哪些设备
 
@@ -113,7 +115,16 @@ config.gpu_options.per_process_gpu_memory_fraction = 0.4 //只允许使用最多
 session = tf.Session(config=config, ...)
 ```
 
+
+### 测试当前是否支持 GPU
+
+```python
+if tf.test.is_built_with_cuda():
+    print "tensorflow build with CUDA"
+```
+
 ### 参考
 
 https://www.tensorflow.org/programmers_guide/using_gpu
 https://github.com/tensorflow/models/blob/master/tutorials/image/cifar10/cifar10_multi_gpu_train.py
+http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capability
