@@ -6,6 +6,12 @@ axis
 0: 每列
 1: 每行
 
+为了避免广播导致潜在的问题，在创建矩阵的时候，应要指定维度，避免 (n,)
+这种维度导致的潜在 bug，并通过 assert 来确认维度。
+
+
+用 np.random.rand(10,1) 而不用 np.random.rand(10)
+
 快速构建一个矩阵
 
 np.arange(121 * 3).reshape([3,11,11])
@@ -231,13 +237,12 @@ array([[1, 1, 1, 2, 2, 2],
 
 ### np.linspace
 
-生成指定范围的一维数组，类似于 python 中的  range, 没有 step 而是 num，注意
+生成指定范围的一维数组，类似于 python 中的 range, 没有 step 而是 num，注意
 endpoint 对结果的影响
 
 linspace(start, stop, num=50, endpoint=True, retstep=False, dtype=None)
 
 >>> import nump as np
->>> help(np.linspace)
 >>> np.linspace(1,10,10)
 array([  1.,   2.,   3.,   4.,   5.,   6.,   7.,   8.,   9.,  10.])
 >>> np.linspace(1,10,10, retstep = True)
@@ -372,6 +377,53 @@ np.reshape(np.ravel(a), (2, 3))
 np.reshape(a, (2, 3), order='F')
 np.reshape(np.ravel(a, order='F'), (2, 3), order='F')
 
+#### np.ravel
+
+>>> x = np.array([[1, 2, 3], [4, 5, 6]])
+>>> print(x.ravel())
+[1 2 3 4 5 6]
+
+#### np.clip
+
+clip(a, a_min, a_max, out=None)
+
+将 a 中每个元素限制在 a_min, a_max，小于  a_min 的设置为  a_min, 大于  a_max
+的设置为 a_max
+
+>>> a = np.arange(10)
+>>> a
+array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+>>> np.clip(a, 2, 6)
+array([2, 2, 2, 3, 4, 5, 6, 6, 6, 6])
+>>> a
+array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+>>> np.clip(a, 2, 6, a)
+array([2, 2, 2, 3, 4, 5, 6, 6, 6, 6])
+>>> a
+array([2, 2, 2, 3, 4, 5, 6, 6, 6, 6])
+
+#### np.roll
+
+roll(a, shift, axis=None)
+
+>>> x = np.arange(10)
+>>> np.roll(x, 2)
+array([8, 9, 0, 1, 2, 3, 4, 5, 6, 7])
+
+>>> x2 = np.reshape(x, (2,5))
+>>> x2
+array([[0, 1, 2, 3, 4],
+       [5, 6, 7, 8, 9]])
+>>> np.roll(x2, 1)
+array([[9, 0, 1, 2, 3],
+       [4, 5, 6, 7, 8]])
+>>> np.roll(x2, 1, axis=0)
+array([[5, 6, 7, 8, 9],
+       [0, 1, 2, 3, 4]])
+>>> np.roll(x2, 1, axis=1)
+array([[4, 0, 1, 2, 3],
+       [9, 5, 6, 7, 8]])
+
 ### np.transpose
 
 转置
@@ -425,6 +477,8 @@ array([7, 5, 6, 9, 3, 8, 1, 4, 0, 2])
 ### np.random.choice
 
 choice(a, size=None, replace=True, p=None)
+
+从 a 中随机采样生成 shape 为 size 的矩阵或向量
 
 >>> np.random.choice(5, 3)
 array([1, 4, 4])
@@ -624,3 +678,6 @@ array([[0],
 array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 >>> np.squeeze(np.squeeze([ i for i in range(10) ]))
 array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+
+#### np.nditer
